@@ -1,0 +1,5 @@
+Revision history for Mojolicious-Plugin-OAuth2-Server
+
+0.01     2015-01-30
+        - First release inspired by frustration, confusion, and hate when trying
+          to implement OAuth2 resource/auth server using existing CPAN modules

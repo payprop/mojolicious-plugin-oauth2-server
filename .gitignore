@@ -1,0 +1,10 @@
+*META.*
+*~
+MANIFEST*
+MYMETA.json
+MYMETA.yml
+Makefile*
+Mojolicious-Plugin-OAuth2-Server*.gz
+blib
+cover_db
+pm_to_blib
