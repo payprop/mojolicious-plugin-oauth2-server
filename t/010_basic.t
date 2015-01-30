@@ -15,19 +15,24 @@ my $port    = $app_url->port;
 
 # plugin configuration
 plugin 'OAuth2::Server' => {
-  verify_client        => sub {
-    my ( $client_id,$client_secret,$scope_ref ) = @_;
-    return 1;
+  clients              => {
+    1 => {
+      client_secret => 'boo',
+      scopes => [ qw/ lot of nuts / ],
+    }
   },
-  store_client_id      => sub { 1 },
-  store_client_secret  => sub { 1 },
-  scopes_for_client_id => sub { qw/ tweet post / },
-  store_auth_code      => sub { 1 },
-  verify_access_token  => sub { 1 },
+  verify_client        => undef,
+  store_auth_code      => undef,
+  verify_auth_code     => undef,
+  store_client_id      => undef,
+  store_client_secret  => undef,
+  scopes_for_client_id => undef,
+  verify_access_token  => undef,
 };
 
 # now the testing begins
 note( "authorization request" );
+
 $t->get_ok( '/oauth/authorize?'
   . join( '&',
       'client_id=1',
@@ -41,12 +46,14 @@ $t->get_ok( '/oauth/authorize?'
   ->status_is( 302 )
 ;
 
+note( " ... authorized" );
 my $location = Mojo::URL->new( $t->tx->res->headers->location );
 note( $location );
 is( $location->path,'/nuts','redirect to right place' );
 ok( $location->query->param( 'code' ),'includes code' );
 is( $location->query->param( 'state' ),'queasy','includes state' );
 
+note( " ... not authorized (missing params)" );
 foreach my $q_string (
   'client_secret=boo&response_type=code',
   'client_id=1&response_type=code',
@@ -54,9 +61,17 @@ foreach my $q_string (
 ) {
   $t->get_ok( '/oauth/authorize?',$q_string )
     ->status_is( 400 )
-    ->json_is( { error => 'invalid_request' } )
+    ->json_is( {
+      error => 'invalid_request',
+      error_description => 'the request was missing one of: client_id, '
+        . 'client_secret, response_type;'
+        . 'or response_type did not equal "code"',
+      error_uri         => '',
+    } )
   ;
 }
+
+note( " ... not authorized (errors)" );
 
 done_testing();
 
