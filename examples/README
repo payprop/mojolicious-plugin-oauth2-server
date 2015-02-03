@@ -1,0 +1,52 @@
+The various parties:
+-------------------
+                                                        id
+                                                _____ secret ____
+                                               /                 \
+                                               v                  v
+[ Resource Owner ] <-> [ User Agent ] <-> [ Client ] <-> [ Resource Server ]
+                             ^                                   ^
+                             \__________ access token ___________/
+
+What we have available in this examples/ directory:
+
+examples/oauth2_client.pl       - A Client
+
+examples/oauth2_server.pl       - An Authorzation Server and Resource Server
+                                  (that only runs one proc and will not retain
+                                  tokens across restarts)
+
+examples/oauth2_server_multi.pl - An Authorzation Server and Resource Server
+                                  (that can handle multiple procs and restarts
+                                  withough losing know tokens - although will
+                                  not scale, you should use a database really)
+
+curl (/usr/bin/curl)            - A User Agent
+
+the command line                - A Resource Owner (A person, You!)
+
+To run:
+------
+
+cd examples;
+perl -I../lib ~/bin/morbo -l "https://*:3000" oauth2_server_multi.pl # in a term
+perl ~/bin/morbo -l "https://*:3001" oauth2_client.pl # in another term
+
+Then:
+----
+
+either visit https://127.0.0.1:3001/auth, then "login" and confirm permissions
+
+or on the command line:
+
+# get a token:
+curl -k https://127.0.0.1:3001/auth -L # will return $token
+
+# should say "You cannot play":
+curl -k -H"Authorization: Bearer $token https://127.0.0.1:3000/play
+
+# should say "Acted":
+curl -k -H"Authorization: Bearer $token" https://127.0.0.1:3000/api/act
+
+# should say "Unauthorized":
+curl -k -H"Authorization: Bearer bad"  https://127.0.0.1:3000/api/act

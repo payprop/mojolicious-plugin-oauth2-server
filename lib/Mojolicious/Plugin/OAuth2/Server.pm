@@ -51,15 +51,21 @@ sub register {
   if (
     # if we don't have a list of clients
     ! exists( $config->{clients} )
-    # we must know how to verify clients
-    and ! exists( $config->{verify_client} )
+    # we must know how to verify clients and tokens
+    and (
+      ! exists( $config->{verify_client} )
+      or ! exists( $config->{store_auth_code} )
+      or ! exists( $config->{verify_auth_code} )
+      or ! exists( $config->{store_access_token} )
+      or ! exists( $config->{verify_access_token} )
+    )
   ) {
     croak "OAuth2::Server config must provide either clients or overrides"
   }
 
   %CLIENTS = %{ $config->{clients} // {} };
 
-  $app->routes->post(
+  $app->routes->get(
     $auth_route => sub { _authorization_request( $app,$config,@_ ) },
   );
 
@@ -75,14 +81,13 @@ sub register {
 sub _authorization_request {
   my ( $app,$config,$self ) = @_;
 
-  my ( $c_id,$c_secret,$url,$type,$scope,$state ) = map { $self->param( $_ ) }
-    qw/ client_id client_secret redirect_uri response_type scope state /;
+  my ( $c_id,$url,$type,$scope,$state ) = map { $self->param( $_ ) }
+    qw/ client_id redirect_uri response_type scope state /;
 
   my @scopes = $scope ? split( / /,$scope ) : ();
 
   if (
     ! defined( $c_id )
-    or ! defined( $c_secret )
     or ! defined( $type )
     or $type ne 'code'
   ) {
@@ -91,7 +96,7 @@ sub _authorization_request {
       json   => {
         error             => 'invalid_request',
         error_description => 'the request was missing one of: client_id, '
-          . 'client_secret, response_type;'
+          . 'response_type;'
           . 'or response_type did not equal "code"',
         error_uri         => '',
       }
@@ -102,14 +107,15 @@ sub _authorization_request {
   my $uri = Mojo::URL->new( $url );
 
   my $sub            = $config->{verify_client} // \&_verify_client;
-  my ( $res,$error ) = $sub->( $self,$c_id,$c_secret,\@scopes );
+  my ( $res,$error ) = $sub->( $self,$c_id,\@scopes );
 
   if ( $res ) {
 
+    $self->app->log->debug( "OAuth2::Server: Generating auth code for $c_id" );
     my ( $auth_code,$expires_at ) = _generate_authorization_code( $c_id );
 
     if ( $sub = $config->{store_auth_code} ) {
-      $sub->( $self,$auth_code,$c_id,$c_secret,$expires_at,$url,@scopes );
+      $sub->( $self,$auth_code,$c_id,$expires_at,$url,@scopes );
     } else {
       _store_auth_code( $self,$auth_code,$c_id,$expires_at,$url,@scopes );
     }
@@ -134,8 +140,8 @@ sub _authorization_request {
 sub _access_token_request {
   my ( $app,$config,$self ) = @_;
 
-  my ( $grant_type,$auth_code,$url,$refresh_token ) = map { $self->param( $_ ) }
-    qw/ grant_type code redirect_uri refresh_token /;
+  my ( $client_id,$client_secret,$grant_type,$auth_code,$url,$refresh_token ) = map { $self->param( $_ ) }
+    qw/ client_id client_secret grant_type code redirect_uri refresh_token /;
 
   if (
     ! defined( $grant_type )
@@ -148,7 +154,7 @@ sub _access_token_request {
       json   => {
         error             => 'invalid_request',
         error_description => 'the request was missing one of: grant_type, '
-          . 'code, redirect_uri;'
+          . 'client_id, client_secret, code, redirect_uri;'
           . 'or grant_type did not equal "authorization_code" '
           . 'or "refresh_token"',
         error_uri         => '',
@@ -164,12 +170,15 @@ sub _access_token_request {
   if ( $grant_type eq 'refresh_token' ) {
     $c_id = _verify_access_token_and_scope( $app,$config,$self );
   } else {
-    my $verify_auth_code_sub
-      = $config->{verify_auth_code} // \&_verify_auth_code;
-    ( $c_id,$error,$scope ) = $verify_auth_code_sub->( $self,$auth_code,$url );
+    my $verify_auth_code_sub = $config->{verify_auth_code} // \&_verify_auth_code;
+    ( $c_id,$error,$scope ) = $verify_auth_code_sub->(
+      $self,$client_id,$client_secret,$auth_code,$url
+    );
   }
 
   if ( $c_id ) {
+
+    $self->app->log->debug( "OAuth2::Server: Generating access token for $client_id" );
 
     my ( $access_token,$refresh_token,$expires_in )
       = _generate_access_token( $c_id );
@@ -246,21 +255,37 @@ sub _store_auth_code {
 }
 
 sub _verify_auth_code {
-  my ( $c,$auth_code,$uri ) = @_;
+  my ( $c,$client_id,$client_secret,$auth_code,$uri ) = @_;
 
-  my ( $sec,$usec,$rand,$client_id ) = split( '-',decode_base64( $auth_code ) );
+  my ( $sec,$usec,$rand ) = split( '-',decode_base64( $auth_code ) );
 
   if (
     ! exists( $AUTH_CODES{$auth_code} )
+    or ! exists( $CLIENTS{$client_id} )
+    or ( $client_secret ne $CLIENTS{$client_id}{client_secret} )
     or $AUTH_CODES{$auth_code}{access_token}
     or ( $uri && $AUTH_CODES{$auth_code}{redirect_uri} ne $uri )
     or ( $AUTH_CODES{$auth_code}{expires} <= time )
-    or ( $client_id ne $AUTH_CODES{$auth_code}{client_id} )
   ) {
+
+    $c->app->log->debug( "OAuth2::Server: Auth code does not exist" )
+      if ! exists( $AUTH_CODES{$auth_code} );
+    $c->app->log->debug( "OAuth2::Server: Client ($client_id) does not exist" )
+      if ! exists( $CLIENTS{$client_id} );
+    $c->app->log->debug( "OAuth2::Server: Client secret does not match" )
+      if ( $client_secret ne $CLIENTS{$client_id}{client_secret} );
+    $c->app->log->debug( "OAuth2::Server: Redirect URI does not match" )
+      if ( $uri && $AUTH_CODES{$auth_code}{redirect_uri} ne $uri );
+    $c->app->log->debug( "OAuth2::Server: Auth code expired" )
+      if ( $AUTH_CODES{$auth_code}{expires} <= time );
 
     if ( my $access_token = $AUTH_CODES{$auth_code}{access_token} ) {
       # this auth code has already been used to generate an access token
       # so we need to revoke the access token that was previously generated
+      $c->app->log->debug(
+        "OAuth2::Server: Auth code already used to get access token"
+      );
+
       _revoke_access_token( $c,$access_token );
     }
 
@@ -269,32 +294,28 @@ sub _verify_auth_code {
     return ( 1,$client_id,$AUTH_CODES{$auth_code}{scope} );
   }
 
-  return ( 0,'invalid_request' );
 }
 
 sub _verify_client {
-  my ( $c,$client_id,$client_secret,$scopes_ref ) = @_;
+  my ( $c,$client_id,$scopes_ref ) = @_;
 
   if ( my $client = $CLIENTS{$client_id} ) {
-
-    if ( $client->{client_secret} eq $client_secret ) {
 
       foreach my $scope ( @{ $scopes_ref // [] } ) {
 
         if ( ! exists( $CLIENTS{$client_id}{scopes}{$scope} ) ) {
+          $c->app->log->debug( "OAuth2::Server: Client lacks scope ($scope)" );
           return ( 0,'invalid_scope' );
         } elsif ( ! $CLIENTS{$client_id}{scopes}{$scope} ) {
+          $c->app->log->debug( "OAuth2::Server: Client cannot scope ($scope)" );
           return ( 0,'access_denied' );
         }
       }
 
       return ( 1 );
-
-    } else {
-      return ( 0,'access_denied' );
-    }
   }
 
+  $c->app->log->debug( "OAuth2::Server: Client ($client_id) does not exist" );
   return ( 0,'unauthorized_client' );
 }
 
@@ -308,6 +329,7 @@ sub _verify_access_token_and_scope {
     = $config->{verify_access_token} // \&_verify_access_token;
 
   if ( $auth_type ne 'Bearer' ) {
+    $c->app->log->debug( "OAuth2::Server: Auth type is not 'Bearer'" );
     return 0;
   } else {
     return $verify_access_token_sub->( $c,$access_token,\@scopes );
@@ -340,6 +362,7 @@ sub _store_access_token {
         = $ACCESS_TOKENS{$prev_access_token}{scope};
     }
 
+    $c->app->log->debug( "OAuth2::Server: Revoking old access tokens (refresh)" );
     _revoke_access_token( $c,$prev_access_token );
   }
 
@@ -362,22 +385,28 @@ sub _verify_access_token {
   if ( exists( $ACCESS_TOKENS{$access_token} ) ) {
 
     if ( $ACCESS_TOKENS{$access_token}{expires} <= time ) {
+      $c->app->log->debug( "OAuth2::Server: Access token has expired" );
       _revoke_access_token( $c,$access_token );
       return 0;
     } elsif ( $scopes_ref ) {
 
       foreach my $scope ( @{ $scopes_ref // [] } ) {
-        return 0 if (
+        if (
           ! exists( $ACCESS_TOKENS{$access_token}{scope}{$scope} )
           or ! $ACCESS_TOKENS{$access_token}{scope}{$scope}
-        );
+        ) {
+          $c->app->log->debug( "OAuth2::Server: Access token does not have scope ($scope)" );
+          return 0;
+        }
       }
 
     }
 
+    $c->app->log->debug( "OAuth2::Server: Access token is valid" );
     return $ACCESS_TOKENS{$access_token}{client_id};
   }
 
+  $c->app->log->debug( "OAuth2::Server: Access token does not exist" );
   return 0;
 }
 

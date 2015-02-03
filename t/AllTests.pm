@@ -29,16 +29,15 @@ sub run {
 
   note( " ... not authorized (missing params)" );
   foreach my $form_params (
-    { client_secret => 'boo', response_type => 'code', },
-    { client_id     => 1,     response_type => 'code', },
-    { client_id     => 1,     client_secret => 'boo', },
+    { response_type => 'code', },
+    { client_id     => 1 },
   ) {
-    $t->post_ok( $auth_route => form => $form_params )
+    $t->get_ok( $auth_route => form => $form_params )
       ->status_is( 400 )
       ->json_is( {
         error => 'invalid_request',
         error_description => 'the request was missing one of: client_id, '
-          . 'client_secret, response_type;'
+          . 'response_type;'
           . 'or response_type did not equal "code"',
         error_uri         => '',
       } )
@@ -49,12 +48,11 @@ sub run {
 
   foreach my $invalid_params (
     { client_id     => 2,       error => 'unauthorized_client', },
-    { client_secret => 'eek',   error => 'access_denied', },
     { scope         => 'cry',   error => 'invalid_scope', },
     { scope         => 'drink', error => 'access_denied', },
   ) {
     my $expected_error = delete( $invalid_params->{error} );
-    $t->post_ok( $auth_route => form => {
+    $t->get_ok( $auth_route => form => {
         %valid_auth_params, %{ $invalid_params }
       } )
       ->status_is( 302 )
@@ -66,7 +64,7 @@ sub run {
     is( $location->query->param( 'error' ),$expected_error,'expected error' );
   }
 
-  $t->post_ok( $auth_route => form => \%valid_auth_params )
+  $t->get_ok( $auth_route => form => \%valid_auth_params )
     ->status_is( 302 )
   ;
 
@@ -79,10 +77,45 @@ sub run {
   note( "access token" );
 
   my %valid_token_params = (
-    grant_type   => 'authorization_code',
-    code         => $auth_code,
-    redirect_uri => $valid_auth_params{redirect_uri},
+    client_id     => 1,
+    client_secret => 'boo',
+    grant_type    => 'authorization_code',
+    code          => $auth_code,
+    redirect_uri  => $valid_auth_params{redirect_uri},
   );
+
+  note( " ... no token (missing params)" );
+  foreach my $form_params (
+    { response_type => 'code', },
+    { client_id     => 1 },
+  ) {
+    $t->post_ok( $token_route => form => $form_params )
+      ->status_is( 400 )
+      ->json_is( {
+        error => 'invalid_request',
+        error_description => 'the request was missing one of: grant_type, '
+          . 'client_id, client_secret, code, redirect_uri;'
+          . 'or grant_type did not equal "authorization_code" '
+          . 'or "refresh_token"',
+        error_uri         => '',
+      } )
+    ;
+  }
+
+  note( " ... no token (errors)" );
+
+  foreach my $invalid_params (
+    { client_id     => 2,       error => 'unauthorized_client', },
+    { client_secret => 'wee',   error => 'unauthorized_client', },
+  ) {
+    note explain $invalid_params;
+    my $expected_error = delete( $invalid_params->{error} );
+    $t->post_ok( $token_route => form => {
+        %valid_token_params, %{ $invalid_params }
+      } )
+      ->status_is( 400 )
+    ;
+  }
 
   $t->post_ok( $token_route => form => \%valid_token_params )
     ->status_is( 200 )

@@ -10,11 +10,10 @@ use lib $Bin;
 use AllTests;
 
 my $verify_client_sub = sub {
-  my ( $c,$client_id,$client_secret,$scopes_ref ) = @_;
+  my ( $c,$client_id,$scopes_ref ) = @_;
 
   # in reality we would check a config file / the database to confirm the
   # client_id and client_secret match and that the scopes are valid
-  return ( 0,'access_denied' ) if $client_secret ne 'boo';
   return ( 0,'invalid_scope' ) if grep { $_ eq 'cry' } @{ $scopes_ref // [] };
   return ( 0,'access_denied' ) if grep { $_ eq 'drink' } @{ $scopes_ref // [] };
   return ( 0,'unauthorized_client' ) if $client_id ne '1';
@@ -24,7 +23,7 @@ my $verify_client_sub = sub {
 };
 
 my $store_auth_code_sub = sub {
-  my ( $c,$auth_code,$client_id,$client_secret,$expires_at,$url,@scopes ) = @_;
+  my ( $c,$auth_code,$client_id,$expires_at,$url,@scopes ) = @_;
 
   # in reality would store stuff in the database here (or perhaps a
   # correctly scoped hash, but the database is where it should be so
@@ -36,9 +35,11 @@ my %VERIFIED_AUTH_CODES;
 my $ACCESS_REVOKED = 0;
 
 my $verify_auth_code_sub = sub {
-  my ( $c,$auth_code,$url ) = @_;
+  my ( $c,$client_id,$client_secret,$auth_code,$url ) = @_;
 
-  my $client_id = 1;
+  return ( 0,'invalid_grant' ) if $client_id ne '1';
+  return ( 0,'invalid_grant' ) if $client_secret ne 'boo';
+
   my $error     = undef;
   my $scope     = {
     eat   => 1,

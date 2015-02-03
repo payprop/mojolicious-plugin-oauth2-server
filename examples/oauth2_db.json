@@ -1,0 +1,11 @@
+{
+  "clients" : {
+    "1" : {
+      "client_secret" : "boo",
+      "scopes" : {
+        "act" : true,
+        "play" : false
+      }
+    }
+  }
+}
