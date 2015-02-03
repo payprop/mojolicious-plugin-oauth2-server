@@ -9,6 +9,10 @@ use Test::Deep;
 use Test::Mojo;
 
 sub run {
+  my ( $args ) = @_;
+
+  my $auth_route  = $args->{authorize_route}    // '/oauth/authorize';
+  my $token_route = $args->{access_token_route} // '/oauth/access_token';
 
   my %valid_auth_params = (
     client_id     => 1,
@@ -29,7 +33,7 @@ sub run {
     { client_id     => 1,     response_type => 'code', },
     { client_id     => 1,     client_secret => 'boo', },
   ) {
-    $t->post_ok( '/oauth/authorize' => form => $form_params )
+    $t->post_ok( $auth_route => form => $form_params )
       ->status_is( 400 )
       ->json_is( {
         error => 'invalid_request',
@@ -50,7 +54,7 @@ sub run {
     { scope         => 'drink', error => 'access_denied', },
   ) {
     my $expected_error = delete( $invalid_params->{error} );
-    $t->post_ok( '/oauth/authorize' => form => {
+    $t->post_ok( $auth_route => form => {
         %valid_auth_params, %{ $invalid_params }
       } )
       ->status_is( 302 )
@@ -62,7 +66,7 @@ sub run {
     is( $location->query->param( 'error' ),$expected_error,'expected error' );
   }
 
-  $t->post_ok( '/oauth/authorize' => form => \%valid_auth_params )
+  $t->post_ok( $auth_route => form => \%valid_auth_params )
     ->status_is( 302 )
   ;
 
@@ -80,7 +84,7 @@ sub run {
     redirect_uri => $valid_auth_params{redirect_uri},
   );
 
-  $t->post_ok( '/oauth/access_token' => form => \%valid_token_params )
+  $t->post_ok( $token_route => form => \%valid_token_params )
     ->status_is( 200 )
     ->header_is( 'Cache-Control' => 'no-store' )
     ->header_is( 'Pragma'        => 'no-cache' )
@@ -122,7 +126,7 @@ sub run {
     scope         => 'eat',
   );
 
-  $t->post_ok( '/oauth/access_token' => form => \%valid_refresh_token_params )
+  $t->post_ok( $token_route => form => \%valid_refresh_token_params )
     ->status_is( 200 )
     ->header_is( 'Cache-Control' => 'no-store' )
     ->header_is( 'Pragma'        => 'no-cache' )
@@ -158,7 +162,7 @@ sub run {
 
   note( "access token (2nd time with same auth code fails)" );
 
-  $t->post_ok( '/oauth/access_token' => form => \%valid_token_params )
+  $t->post_ok( $token_route => form => \%valid_token_params )
     ->status_is( 400 )
   ;
 

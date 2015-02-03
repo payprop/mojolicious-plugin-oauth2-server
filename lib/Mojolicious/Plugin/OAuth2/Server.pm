@@ -22,6 +22,7 @@ use base qw/ Mojolicious::Plugin /;
 use Mojo::URL;
 use Time::HiRes qw/ gettimeofday /;
 use MIME::Base64 qw/ encode_base64 decode_base64 /;
+use Carp qw/croak/;
 
 our $VERSION = '0.01';
 
@@ -46,6 +47,15 @@ sub register {
 
   my $auth_route   = $config->{authorize_route}    // '/oauth/authorize';
   my $atoken_route = $config->{access_token_route} // '/oauth/access_token';
+
+  if (
+    # if we don't have a list of clients
+    ! exists( $config->{clients} )
+    # we must know how to verify clients
+    and ! exists( $config->{verify_client} )
+  ) {
+    croak "OAuth2::Server config must provide either clients or overrides"
+  }
 
   %CLIENTS = %{ $config->{clients} // {} };
 
@@ -99,9 +109,9 @@ sub _authorization_request {
     my ( $auth_code,$expires_at ) = _generate_authorization_code( $c_id );
 
     if ( $sub = $config->{store_auth_code} ) {
-      $sub->( $auth_code,$c_id,$c_secret,$expires_at,$url,@scopes );
+      $sub->( $self,$auth_code,$c_id,$c_secret,$expires_at,$url,@scopes );
     } else {
-      _store_auth_code( $auth_code,$c_id,$expires_at,$url,@scopes );
+      _store_auth_code( $self,$auth_code,$c_id,$expires_at,$url,@scopes );
     }
 
     $uri->query->append( code  => $auth_code );
@@ -168,7 +178,7 @@ sub _access_token_request {
       = $config->{store_access_token} // \&_store_access_token;
 
     $store_access_token_sub->(
-      $c_id,$auth_code,$access_token,$refresh_token,$expires_in,$scope
+      $self,$c_id,$auth_code,$access_token,$refresh_token,$expires_in,$scope
     );
 
     $status        = 200;
@@ -221,7 +231,7 @@ sub _generate_access_token {
 }
 
 sub _store_auth_code {
-  my ( $auth_code,$client_id,$expires_at,$uri,@scopes ) = @_;
+  my ( $c,$auth_code,$client_id,$expires_at,$uri,@scopes ) = @_;
 
   $AUTH_CODES{$auth_code} = {
     client_id     => $client_id,
@@ -236,7 +246,7 @@ sub _store_auth_code {
 }
 
 sub _verify_auth_code {
-  my ( $self,$auth_code,$uri ) = @_;
+  my ( $c,$auth_code,$uri ) = @_;
 
   my ( $sec,$usec,$rand,$client_id ) = split( '-',decode_base64( $auth_code ) );
 
@@ -251,7 +261,7 @@ sub _verify_auth_code {
     if ( my $access_token = $AUTH_CODES{$auth_code}{access_token} ) {
       # this auth code has already been used to generate an access token
       # so we need to revoke the access token that was previously generated
-      _revoke_access_token( $access_token );
+      _revoke_access_token( $c,$access_token );
     }
 
     return ( 0,'invalid_grant' );
@@ -263,7 +273,7 @@ sub _verify_auth_code {
 }
 
 sub _verify_client {
-  my ( $self,$client_id,$client_secret,$scopes_ref ) = @_;
+  my ( $c,$client_id,$client_secret,$scopes_ref ) = @_;
 
   if ( my $client = $CLIENTS{$client_id} ) {
 
@@ -300,13 +310,15 @@ sub _verify_access_token_and_scope {
   if ( $auth_type ne 'Bearer' ) {
     return 0;
   } else {
-    return $verify_access_token_sub->( $access_token,\@scopes );
+    return $verify_access_token_sub->( $c,$access_token,\@scopes );
   }
 
 }
 
 sub _store_access_token {
-  my ( $c_id,$auth_code,$access_token,$refresh_token,$expires_in,$scope ) = @_;
+  my (
+    $c,$c_id,$auth_code,$access_token,$refresh_token,$expires_in,$scope
+  ) = @_;
 
   $ACCESS_TOKENS{$access_token} = {
     scope         => $scope,
@@ -328,7 +340,7 @@ sub _store_access_token {
         = $ACCESS_TOKENS{$prev_access_token}{scope};
     }
 
-    _revoke_access_token( $prev_access_token );
+    _revoke_access_token( $c,$prev_access_token );
   }
 
   $AUTH_CODES{$auth_code}{access_token} = $access_token;
@@ -337,7 +349,7 @@ sub _store_access_token {
 }
 
 sub _revoke_access_token {
-  my ( $access_token ) = @_;
+  my ( $c,$access_token ) = @_;
 
   # need to revoke both the refresh token and the access token
   delete( $ACCESS_TOKENS{ $ACCESS_TOKENS{$access_token}{refresh_token} } );
@@ -345,12 +357,12 @@ sub _revoke_access_token {
 }
 
 sub _verify_access_token {
-  my ( $access_token,$scopes_ref ) = @_;
+  my ( $c,$access_token,$scopes_ref ) = @_;
 
   if ( exists( $ACCESS_TOKENS{$access_token} ) ) {
 
     if ( $ACCESS_TOKENS{$access_token}{expires} <= time ) {
-      _revoke_access_token( $access_token );
+      _revoke_access_token( $c,$access_token );
       return 0;
     } elsif ( $scopes_ref ) {
 

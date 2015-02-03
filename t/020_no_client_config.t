@@ -9,19 +9,24 @@ use FindBin qw/ $Bin /;
 use lib $Bin;
 use AllTests;
 
+my $verify_client_sub = sub {
+  my ( $c,$client_id,$client_secret,$scopes_ref ) = @_;
+
+  # in reality we would check a config file / the database to confirm the
+  # client_id and client_secret match and that the scopes are valid
+  return ( 0,'access_denied' ) if $client_secret ne 'boo';
+  return ( 0,'invalid_scope' ) if grep { $_ eq 'cry' } @{ $scopes_ref // [] };
+  return ( 0,'access_denied' ) if grep { $_ eq 'drink' } @{ $scopes_ref // [] };
+  return ( 0,'unauthorized_client' ) if $client_id ne '1';
+
+  # all good
+  return ( 1,undef );
+};
+
 MOJO_APP: {
   # plugin configuration
   plugin 'OAuth2::Server' => {
-    clients              => {
-      1 => {
-        client_secret => 'boo',
-        scopes        => {
-          eat       => 1,
-          drink     => 0,
-          sleep     => 1,
-        },
-      },
-    },
+    verify_client => $verify_client_sub,
   };
 
   group {
