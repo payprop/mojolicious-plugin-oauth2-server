@@ -28,6 +28,7 @@ our $VERSION = '0.01';
 my %CLIENTS;
 my %AUTH_CODES;
 my %ACCESS_TOKENS;
+my %AUTH_CODES_BY_CLIENT;
 
 =head1 METHODS
 
@@ -229,6 +230,8 @@ sub _store_auth_code {
     scope         => { map { $_ => 1 } @scopes },
   };
 
+  $AUTH_CODES_BY_CLIENT{$client_id} = $auth_code;
+
   return 1;
 }
 
@@ -311,6 +314,22 @@ sub _store_access_token {
     refresh_token => $refresh_token,
     client_id     => $c_id,
   };
+
+  if ( ! defined( $auth_code ) ) {
+    # must have generated an access token via a refresh token so
+    # revoke the old access token and update the AUTH_CODES hash
+    # to store the new one (also copy across scopes if missing)
+    $auth_code = $AUTH_CODES_BY_CLIENT{$c_id};
+
+    my $prev_access_token = $AUTH_CODES{$auth_code}{access_token};
+
+    if ( ! $ACCESS_TOKENS{$access_token}{scope} ) {
+      $ACCESS_TOKENS{$access_token}{scope}
+        = $ACCESS_TOKENS{$prev_access_token}{scope};
+    }
+
+    _revoke_access_token( $prev_access_token );
+  }
 
   $AUTH_CODES{$auth_code}{access_token} = $access_token;
 
