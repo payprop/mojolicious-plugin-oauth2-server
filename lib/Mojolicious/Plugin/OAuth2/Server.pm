@@ -134,7 +134,9 @@ sub _authorization_request {
   if ( $res ) {
 
     $self->app->log->debug( "OAuth2::Server: Generating auth code for $c_id" );
-    my ( $auth_code,$expires_at ) = _generate_authorization_code( $c_id );
+    my ( $auth_code,$expires_at ) = _generate_authorization_code(
+      $c_id,$config->{auth_code_ttl}
+    );
 
     if ( my $store_auth_code = $config->{store_auth_code} ) {
       $store_auth_code->( $self,$auth_code,$c_id,$expires_at,$url,@scopes );
@@ -203,7 +205,7 @@ sub _access_token_request {
     $self->app->log->debug( "OAuth2::Server: Generating access token for $client_id" );
 
     my ( $access_token,$refresh_token,$expires_in )
-      = _generate_access_token( $c_id );
+      = _generate_access_token( $c_id,$config->{access_token_ttl} );
 
     my $store_access_token_sub
       = $config->{store_access_token} // \&_store_access_token;
@@ -240,24 +242,27 @@ sub _access_token_request {
 }
 
 sub _generate_authorization_code {
-  my ( $client_id ) = @_;
+  my ( $client_id,$ttl ) = @_;
 
+  $ttl //= 600;
   my ( $sec,$usec ) = gettimeofday;
 
   return (
     encode_base64( join( '-',$sec,$usec,rand(),$client_id ),'' ),
-    time + 600
+    time + $ttl
   );
 }
 
 sub _generate_access_token {
 
-  my ( $client_id ) = @_;
+  my ( $client_id,$ttl ) = @_;
+
+  $ttl //= 3600;
 
   return (
     ( _generate_authorization_code( $client_id ) )[0],
     ( _generate_authorization_code( $client_id ) )[0],
-    3600,
+    $ttl,
   );
 }
 

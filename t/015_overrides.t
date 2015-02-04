@@ -61,10 +61,14 @@ my $verify_auth_code_sub = sub {
   return ( $client_id,$error,$scope );
 };
 
+my $VALID_ACCESS_TOKEN;
+
 my $store_access_token_sub = sub {
   my (
     $c,$client_id,$auth_code,$access_token,$refresh_token,$expires_in,$scope
   ) = @_;
+
+  $VALID_ACCESS_TOKEN = $access_token;
 
   # again, store stuff in the database
   return;
@@ -77,6 +81,10 @@ my $verify_access_token_sub = sub {
   # passed scopes are allowed for the access token
   return 0 if $ACCESS_REVOKED;
   return 0 if grep { $_ eq 'sleep' } @{ $scopes_ref // [] };
+
+  # this will only ever allow one access token - for the purposes of testing
+  # that when a refresh token is used the previous access token is revoked
+  return 0 if $access_token ne $VALID_ACCESS_TOKEN;
 
   my $client_id = 1;
 

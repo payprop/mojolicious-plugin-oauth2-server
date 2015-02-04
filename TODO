@@ -1,4 +1,2 @@
 - perldoc
 - test coverage increase
-- tests for expired tokens
-- tests that previous refresh tokens revoked when refresh token used

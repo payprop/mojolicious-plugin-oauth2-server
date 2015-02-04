@@ -151,7 +151,7 @@ sub run {
   $t->get_ok('/api/eat')->status_is( 200 );
   $t->get_ok('/api/sleep')->status_is( 401 );
 
-  note( "refresh access token" );
+  note( "get a new access token using refresh token" );
 
   my %valid_refresh_token_params = (
     grant_type    => 'refresh_token',
@@ -179,16 +179,20 @@ sub run {
   isnt( $t->tx->res->json->{access_token},$access_token,'new access_token' );
   isnt( $t->tx->res->json->{refresh_token},$refresh_token,'new refresh_token' );
 
-  $access_token  = $t->tx->res->json->{access_token};
-  $refresh_token = $t->tx->res->json->{refresh_token};
+  my $new_access_token  = $t->tx->res->json->{access_token};
+  my $new_refresh_token = $t->tx->res->json->{refresh_token};
+
+  note( "previous access token revoked" );
+
+  $t->get_ok('/api/eat')->status_is( 401 );
+  $t->get_ok('/api/sleep')->status_is( 401 );
+
+  note( "new access token valid" );
 
   $t->ua->on(start => sub {
     my ( $ua,$tx ) = @_;
-    $tx->req->headers->header( 'Authorization' => "Bearer $access_token" );
+    $tx->req->headers->header( 'Authorization' => "Bearer $new_access_token" );
   });
-
-  $access_token  = $t->tx->res->json->{access_token};
-  $refresh_token = $t->tx->res->json->{refresh_token};
 
   $t->get_ok('/api/eat')->status_is( 200 );
   $t->get_ok('/api/sleep')->status_is( 401 );
