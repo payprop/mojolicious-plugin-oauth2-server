@@ -14,5 +14,5 @@ t/AllTests.pm
 examples/README
 examples/oauth2_client.pl
 examples/oauth2_db.json
-examples/oauth2_server.pl
-examples/oauth2_server_multi.pl
+examples/oauth2_server_simple.pl
+examples/oauth2_server_realistic.pl

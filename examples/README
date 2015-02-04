@@ -41,27 +41,27 @@ Server
 What we have available in this examples/ directory:
 ---------------------------------------------------
 
-examples/oauth2_client.pl       - A Client
+examples/oauth2_client.pl           - A Client
 
-examples/oauth2_server.pl       - An Authorization Server and Resource Server
-                                  (that only runs one proc and will not retain
-                                  tokens across restarts) in its simplest form
+examples/oauth2_server_simple.pl    - An Authorization Server and Resource Server
+                                     (that only runs one proc and will not retain
+                                     tokens across restarts) in its simplest form
 
-examples/oauth2_server_multi.pl - An Authorization Server and Resource Server
-                                  (that can handle multiple procs and restarts
-                                  withough losing know tokens - although will
-                                  not scale, you should use a database really)
+examples/oauth2_server_realistic.pl - An Authorization Server and Resource Server
+                                     (that can handle multiple procs and restarts
+                                     without losing know tokens - although will
+                                     not scale, you should use a database really)
 
-web browser / /usr/bin/curl     - A User Agent
+web browser / /usr/bin/curl        - A User Agent
 
-the command line                - A Resource Owner (A person, You!)
+the command line                   - A Resource Owner (A person, You!)
 
 To run:
 -------
 
 cd examples;
-perl -I../lib ~/bin/morbo -l "https://*:3000" oauth2_server_multi.pl # in a term
-perl ~/bin/morbo -l "https://*:3001" oauth2_client.pl # in another term
+perl -I../lib ~/bin/morbo -l "https://*:3000" oauth2_server_realistic.pl &
+perl ~/bin/morbo -l "https://*:3001" oauth2_client.pl &
 
 Then:
 -----
