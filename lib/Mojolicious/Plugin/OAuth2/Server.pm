@@ -104,18 +104,40 @@ sub _authorization_request {
     return;
   }
 
-  my $uri = Mojo::URL->new( $url );
+  my $resource_owner_logged_in = $config->{login_resource_owner} // sub {1};
+  my $resource_owner_confirms  = $config->{confirm_by_resource_owner} // sub {1};
+  my $verify_client            = $config->{verify_client} // \&_verify_client;
 
-  my $sub            = $config->{verify_client} // \&_verify_client;
-  my ( $res,$error ) = $sub->( $self,$c_id,\@scopes );
+  my $uri = Mojo::URL->new( $url );
+  my ( $res,$error );
+
+  if ( ! $resource_owner_logged_in->( $self ) ) {
+    $self->app->log->debug( "OAuth2::Server: Resource owner not logged in" );
+    # call to $resource_owner_logged_in method should have called redirect_to
+    return;
+  } else {
+    $self->app->log->debug( "OAuth2::Server: Resource owner is logged in" );
+    $res = $resource_owner_confirms->( $self,$c_id,\@scopes );
+    if ( ! defined $res ) {
+      $self->app->log->debug( "OAuth2::Server: Resource owner to confirm scopes" );
+      # call to $resource_owner_confirms method should have called redirect_to
+      return;
+    }
+    elsif ( $res == 0 ) {
+      $self->app->log->debug( "OAuth2::Server: Resource owner denied scopes" );
+      $error = 'access_denied';
+    } else {
+      ( $res,$error ) = $verify_client->( $self,$c_id,\@scopes );
+    }
+  }
 
   if ( $res ) {
 
     $self->app->log->debug( "OAuth2::Server: Generating auth code for $c_id" );
     my ( $auth_code,$expires_at ) = _generate_authorization_code( $c_id );
 
-    if ( $sub = $config->{store_auth_code} ) {
-      $sub->( $self,$auth_code,$c_id,$expires_at,$url,@scopes );
+    if ( my $store_auth_code = $config->{store_auth_code} ) {
+      $store_auth_code->( $self,$auth_code,$c_id,$expires_at,$url,@scopes );
     } else {
       _store_auth_code( $self,$auth_code,$c_id,$expires_at,$url,@scopes );
     }
@@ -342,13 +364,6 @@ sub _store_access_token {
     $c,$c_id,$auth_code,$access_token,$refresh_token,$expires_in,$scope
   ) = @_;
 
-  $ACCESS_TOKENS{$access_token} = {
-    scope         => $scope,
-    expires       => time + $expires_in,
-    refresh_token => $refresh_token,
-    client_id     => $c_id,
-  };
-
   if ( ! defined( $auth_code ) ) {
     # must have generated an access token via a refresh token so
     # revoke the old access token and update the AUTH_CODES hash
@@ -365,6 +380,13 @@ sub _store_access_token {
     $c->app->log->debug( "OAuth2::Server: Revoking old access tokens (refresh)" );
     _revoke_access_token( $c,$prev_access_token );
   }
+
+  $ACCESS_TOKENS{$access_token} = {
+    scope         => $scope,
+    expires       => time + $expires_in,
+    refresh_token => $refresh_token,
+    client_id     => $c_id,
+  };
 
   $AUTH_CODES{$auth_code}{access_token} = $access_token;
 

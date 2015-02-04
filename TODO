@@ -1,4 +1,4 @@
-- example of showing login form when GET /oauth/authorize
-- example of showing "app would like to..." when GET /oauth/authorize
 - perldoc
 - test coverage increase
+- tests for expired tokens
+- tests that previous refresh tokens revoked when refresh token used

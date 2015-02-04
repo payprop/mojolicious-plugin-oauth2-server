@@ -7,10 +7,11 @@ use Mojolicious::Lite;
 
 plugin 'OAuth2::Server' => {
   clients              => {
-    1 => {
+    TrendyNewService => {
       client_secret => 'boo',
       scopes        => {
-        act => 1,
+        "post_images" => 1,
+        "annoy_friends" => 1,
       },
     },
   },
@@ -25,19 +26,20 @@ group {
     return undef;
   };
 
-  any '/act' => sub { shift->render( text => "Acted" ); };
+  any '/annoy_friends' => sub { shift->render( text => "Annoyed Friends" ); };
+  any '/post_image'    => sub { shift->render( text => "Posted Image" ); };
 };
 
-any '/play' => sub {
+any '/track_location' => sub {
   my ( $c ) = @_;
-  $c->oauth( 'play' )
-      || return $c->render( status => 401, text => 'You cannot play' );
-  $c->render( text => "Played" );
+  $c->oauth( 'track_location' )
+      || return $c->render( status => 401, text => 'You cannot track location' );
+  $c->render( text => "Target acquired" );
 };
 
 get '/' => sub {
   my ( $c ) = @_;
-  $c->render( text => "Welcome" );
+  $c->render( text => "Welcome to Overly Attached Social Network" );
 };
 
 app->start;
