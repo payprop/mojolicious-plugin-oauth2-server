@@ -76,16 +76,22 @@ So on the command line (which we are substituting for calls that would be made
 by TrendyNewService here):
 
 # should say "Annoyed Friends":
-curl -k -H"Authorization: Bearer $token" https://127.0.0.1:3000/api/annoy_friends
+curl -k -H"Authorization: Bearer $token" \
+  https://127.0.0.1:3000/api/annoy_friends
 
 # should say "Posted Image":
-curl -k -H"Authorization: Bearer $token" https://127.0.0.1:3000/api/post_image
+curl -k -H"Authorization: Bearer $token" \
+  https://127.0.0.1:3000/api/post_image
 
 # should say "You cannot track location" (with a 401 status):
-curl -k -H"Authorization: Bearer $token"  https://127.0.0.1:3000/api/track_location
+curl -k -H"Authorization: Bearer $token" \
+  https://127.0.0.1:3000/api/track_location
 
 # should say "Unauthorized" (with a 401 status):
-curl -k -H"Authorization: Bearer foo" https://127.0.0.1:3000/api/annoy_friends
+curl -k -H"Authorization: Bearer foo" \
+  https://127.0.0.1:3000/api/annoy_friends
 
 # You can even use the refresh token to generate a new access token:
-curl -k -H"Authorization: Bearer $token" -XPOST https://127.0.0.1:3000/oauth/access_token -d "client_id=TrendyNewService&refresh_token=$refresh_token&grant_type=refresh_token" | json_pp
+curl -k -H"Authorization: Bearer $token" -XPOST \
+  https://127.0.0.1:3000/oauth/access_token \
+  -d "client_id=TrendyNewService&refresh_token=$refresh_token&grant_type=refresh_token" | json_pp

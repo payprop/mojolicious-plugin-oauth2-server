@@ -1,4 +1,2 @@
-- perldoc
-- test coverage increase
 - signing access tokens
 - configure to only function as Auth Server or Resource Server

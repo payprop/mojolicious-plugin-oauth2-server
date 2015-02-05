@@ -2,16 +2,137 @@ package Mojolicious::Plugin::OAuth2::Server;
 
 =head1 NAME
 
-Mojolicious::Plugin::OAuth2::Server - Easier(?) implementation of an OAuth2
-Authorization and Resource Server with Mojolicious
+Mojolicious::Plugin::OAuth2::Server - Easier implementation of an OAuth2
+Authorization Server / Resource Server with Mojolicious
+
+=for html
+<a href='https://travis-ci.org/leejo/mojolicious-plugin-oauth2-server?branch=master'><img src='https://travis-ci.org/leejo/mojolicious-plugin-oauth2-server.svg?branch=master' alt='Build Status' /></a>
+<a href='https://coveralls.io/r/leejo/mojolicious-plugin-oauth2-server?branch=master'><img src='https://coveralls.io/repos/leejo/mojolicious-plugin-oauth2-server/badge.png?branch=master' alt='Coverage Status' /></a>
+
+=head1 VERSION
+
+0.01
 
 =head1 DESCRIPTION
+
+This plugin enables you to easily (?) write an OAuth2 Authorization Server (AS)
+and OAuth2 Resource Server (RS) using Mojolicious. It implements the necessary
+flows and checks leaving you to add functions that are necessary, for example,
+to verify an auth code (AC), access token (AT), etc.
+
+In its simplest form you can call the plugin with just a config of known clients
+and the code will "just work" - however in doing this you will not be able to
+run a multi process persistent OAuth2 AS/RS as the known ACs and ATs will not be
+shared between processes and will be lost on a restart.
+
+To use this plugin in a more realistic way you need to at a minimum implement
+the following functions and pass them to the plugin:
+  
+  login_resource_owner
+  confirm_by_resource_owner
+  verify_client
+  store_auth_code
+  verify_auth_code
+  store_access_token
+  verify_access_token
+
+These will be explained in more detail below, in L<REQUIRED FUNCTIONS>, and you
+can also see the tests and examples included with this distribution. OAuth2
+seems needlessly complicated at first, hopefully this plugin will clarify the
+various steps and simplify the implementation.
 
 Note that OAuth2 requires https, so you need to have the optional Mojolicious
 dependency required to support it. Run the command below to check if
 L<IO::Socket::SSL> is installed.
 
-   $ mojo version
+  $ mojo version
+
+=head1 SYNOPSIS
+
+  use Mojolicious::Lite;
+
+  plugin 'OAuth2::Server' => {
+      ... # see CONFIGURATION
+  };
+
+  group {
+    # /api - must be authorized
+    under '/api' => sub {
+      my ( $c ) = @_;
+
+      return 1 if $c->oauth; # must be authorized via oauth
+
+      $c->render( status => 401, text => 'Unauthorized' );
+      return undef;
+    };
+
+    any '/annoy_friends' => sub { shift->render( text => "Annoyed Friends" ); };
+    any '/post_image'    => sub { shift->render( text => "Posted Image" ); };
+  };
+
+  any '/track_location' => sub {
+    my ( $c ) = @_;
+
+    $c->oauth( 'track_location' ) # must have track_location oauth scope
+        || return $c->render( status => 401, text => 'You cannot track location' );
+
+    $c->render( text => "Target acquired" );
+  };
+
+  app->start;
+
+Or full fat app:
+
+  use Mojo::Base 'Mojolicious';
+
+  ...
+
+  sub startup {
+    my $self = shift;
+
+    ...
+
+    my $oauth2_server_config = $self->plugin('Config')->{oauth2_server};
+    $self->plugin( 'OAuth2::Server' => $oauth2_server_config );
+  }
+
+Then in your controller:
+
+  sub my_route_name {
+    my ( $c ) = @_;
+ 
+    if ( ! $c->oauth( qw/required scopes to use this route/ ) ) {
+      return $c->render( status => 401, text => 'Unauthorized' );
+    }
+
+    ...
+  }
+
+=head1 CONFIGURATION
+
+The plugin takes several configuration options. To use the plugin in a realistic
+way you need to pass several callbacks, documented in L<REQUIRED FUNCTIONS>, and
+marked here with a *
+
+=head2 authorize_route
+
+The route that the Client calls to get an authorization code. Defaults to
+/oauth/authorize
+
+=head2 access_token_route
+
+The route the the Client calls to get an access token. Defaults to
+/oauth/access_token
+
+=head1 auth_code_ttl
+
+The validity period of the generated authorization code in seconds. Defaults to
+600 seconds (10 minutes)
+
+=head1 access_token_ttl
+
+The validity period of the generated access token in seconds. Defaults to 3600
+seconds (1 hour)
 
 =cut
 
@@ -265,6 +386,11 @@ sub _generate_access_token {
   );
 }
 
+=head1 REQUIRED FUNCTIONS
+
+
+=cut
+
 sub _store_auth_code {
   my ( $c,$auth_code,$client_id,$expires_at,$uri,@scopes ) = @_;
 
@@ -438,7 +564,7 @@ sub _verify_access_token {
 
 1;
 
-=head2 REFERENCES
+=head1 REFERENCES
 
 =over 4
 
