@@ -175,8 +175,8 @@ my $store_access_token_sub = sub {
 
   if ( ! defined( $auth_code ) ) {
     # must have generated an access token via a refresh token so revoke the old
-    # access token and update the oauth2_data->{auth_codes} hash to store the
-    # new one (also copy across scopes if missing)
+    # access token and refresh token and update the oauth2_data->{auth_codes}
+    # hash to store the new one (also copy across scopes if missing)
     $auth_code = $oauth2_data->{auth_codes_by_client}{$client_id};
 
     my $prev_access_token = $oauth2_data->{auth_codes}{$auth_code}{access_token};
@@ -198,7 +198,19 @@ my $store_access_token_sub = sub {
     user_id       => $oauth2_data->{auth_codes}{$auth_code}{user_id},
   };
 
+  $oauth2_data->{refresh_tokens}{$refresh_token} = {
+    scope         => $scope,
+    client_id     => $client_id,
+  };
+
   $oauth2_data->{auth_codes}{$auth_code}{access_token} = $access_token;
+
+  # if the client has en existing refresh token we need to revoke it
+  if ( my $prev_r_token = $oauth2_data->{refresh_tokens_by_client}{$client_id} ) {
+    delete( $oauth2_data->{refresh_tokens}{$prev_r_token} );
+  }
+
+  $oauth2_data->{refresh_tokens_by_client}{$client_id} = $refresh_token;
 
   save_oauth2_data( $oauth2_data );
   return;
@@ -209,6 +221,22 @@ my $verify_access_token_sub = sub {
 
   my $oauth2_data = load_oauth2_data();
 
+  if ( exists( $oauth2_data->{refresh_tokens}{$access_token} ) ) {
+
+    if ( $scopes_ref ) {
+      foreach my $scope ( @{ $scopes_ref // [] } ) {
+        if (
+          ! exists( $oauth2_data->{refresh_tokens}{$access_token}{scope}{$scope} )
+          or ! $oauth2_data->{refresh_tokens}{$access_token}{scope}{$scope}
+        ) {
+          $c->app->log->debug( "OAuth2::Server: Refresh token does not have scope ($scope)" );
+          return 0;
+        }
+      }
+    }
+
+    return $oauth2_data->{refresh_tokens}{$access_token}{client_id};
+  }
   if ( exists( $oauth2_data->{access_tokens}{$access_token} ) ) {
 
     if ( $oauth2_data->{access_tokens}{$access_token}{expires} <= time ) {
@@ -253,6 +281,8 @@ sub _revoke_access_token {
 }
 
 plugin 'OAuth2::Server' => {
+  auth_code_ttl             => 300,
+  access_token_ttl          => 600,
   login_resource_owner      => $resource_owner_logged_in_sub,
   confirm_by_resource_owner => $resource_owner_confirm_scopes_sub,
   verify_client             => $verify_client_sub,

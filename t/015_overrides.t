@@ -62,13 +62,15 @@ my $verify_auth_code_sub = sub {
 };
 
 my $VALID_ACCESS_TOKEN;
+my $VALID_REFRESH_TOKEN;
 
 my $store_access_token_sub = sub {
   my (
     $c,$client_id,$auth_code,$access_token,$refresh_token,$expires_in,$scope
   ) = @_;
 
-  $VALID_ACCESS_TOKEN = $access_token;
+  $VALID_ACCESS_TOKEN  = $access_token;
+  $VALID_REFRESH_TOKEN = $refresh_token;
 
   # again, store stuff in the database
   return;
@@ -79,6 +81,7 @@ my $verify_access_token_sub = sub {
 
   # and here we should check the access code is valid, not expired, and the
   # passed scopes are allowed for the access token
+  return 1 if $access_token eq $VALID_REFRESH_TOKEN;
   return 0 if $ACCESS_REVOKED;
   return 0 if grep { $_ eq 'sleep' } @{ $scopes_ref // [] };
 

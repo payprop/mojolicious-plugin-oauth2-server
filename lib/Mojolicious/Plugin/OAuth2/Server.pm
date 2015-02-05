@@ -149,7 +149,9 @@ our $VERSION = '0.01';
 my %CLIENTS;
 my %AUTH_CODES;
 my %ACCESS_TOKENS;
+my %REFRESH_TOKENS;
 my %AUTH_CODES_BY_CLIENT;
+my %REFRESH_TOKENS_BY_CLIENT;
 
 =head1 METHODS
 
@@ -194,7 +196,7 @@ sub register {
   );
 
   $app->helper(
-    oauth => sub { _verify_access_token_and_scope( $app,$config,@_ ) },
+    oauth => sub { _verify_access_token_and_scope( $app,$config,0,@_ ) },
   );
 }
 
@@ -312,7 +314,7 @@ sub _access_token_request {
   my ( $c_id,$error,$scope );
 
   if ( $grant_type eq 'refresh_token' ) {
-    $c_id = _verify_access_token_and_scope( $app,$config,$self );
+    $c_id = _verify_access_token_and_scope( $app,$config,$refresh_token,$self );
   } else {
     my $verify_auth_code_sub = $config->{verify_auth_code} // \&_verify_auth_code;
     ( $c_id,$error,$scope ) = $verify_auth_code_sub->(
@@ -472,21 +474,28 @@ sub _verify_client {
 }
 
 sub _verify_access_token_and_scope {
-  my ( $app,$config,$c,@scopes ) = @_;
-
-  my $auth_header = $c->req->headers->header( 'Authorization' );
-  my ( $auth_type,$access_token ) = split( / /,$auth_header );
+  my ( $app,$config,$refresh_token,$c,@scopes ) = @_;
 
   my $verify_access_token_sub
     = $config->{verify_access_token} // \&_verify_access_token;
 
-  if ( $auth_type ne 'Bearer' ) {
-    $c->app->log->debug( "OAuth2::Server: Auth type is not 'Bearer'" );
-    return 0;
-  } else {
-    return $verify_access_token_sub->( $c,$access_token,\@scopes );
-  }
+  my $access_token;
 
+  if ( ! $refresh_token ) {
+    my $auth_header = $c->req->headers->header( 'Authorization' );
+    my ( $auth_type,$auth_access_token ) = split( / /,$auth_header );
+
+    if ( $auth_type ne 'Bearer' ) {
+      $c->app->log->debug( "OAuth2::Server: Auth type is not 'Bearer'" );
+      return 0;
+    } else {
+      $access_token = $auth_access_token;
+    }
+  } else {
+    $access_token = $refresh_token;
+  }
+  
+  return $verify_access_token_sub->( $c,$access_token,\@scopes );
 }
 
 sub _store_access_token {
@@ -495,12 +504,12 @@ sub _store_access_token {
   ) = @_;
 
   if ( ! defined( $auth_code ) ) {
-    # must have generated an access token via a refresh token so
-    # revoke the old access token and update the AUTH_CODES hash
-    # to store the new one (also copy across scopes if missing)
+    # must have generated an access token via a refresh token so revoke the old
+    # access token and refresh token and update the AUTH_CODES hash to store the
+    # new one (also copy across scopes if missing)
     $auth_code = $AUTH_CODES_BY_CLIENT{$c_id};
 
-    my $prev_access_token = $AUTH_CODES{$auth_code}{access_token};
+    my $prev_access_token  = $AUTH_CODES{$auth_code}{access_token};
 
     if ( ! $ACCESS_TOKENS{$access_token}{scope} ) {
       $ACCESS_TOKENS{$access_token}{scope}
@@ -518,7 +527,18 @@ sub _store_access_token {
     client_id     => $c_id,
   };
 
+  $REFRESH_TOKENS{$refresh_token} = {
+    scope         => $scope,
+    client_id     => $c_id,
+  };
+
   $AUTH_CODES{$auth_code}{access_token} = $access_token;
+
+  if ( my $prev_refresh_token = $REFRESH_TOKENS_BY_CLIENT{$c_id} ) {
+    _revoke_refresh_token( $c,$prev_refresh_token );
+  }
+
+  $REFRESH_TOKENS_BY_CLIENT{$c_id} = $refresh_token;
 
   return $c_id;
 }
@@ -531,10 +551,32 @@ sub _revoke_access_token {
   delete( $ACCESS_TOKENS{$access_token} );
 }
 
+sub _revoke_refresh_token {
+  my ( $c,$refresh_token ) = @_;
+
+  delete( $REFRESH_TOKENS{$refresh_token} );
+}
+
 sub _verify_access_token {
   my ( $c,$access_token,$scopes_ref ) = @_;
 
-  if ( exists( $ACCESS_TOKENS{$access_token} ) ) {
+  if ( exists( $REFRESH_TOKENS{$access_token} ) ) {
+
+    if ( $scopes_ref ) {
+      foreach my $scope ( @{ $scopes_ref // [] } ) {
+        if (
+          ! exists( $REFRESH_TOKENS{$access_token}{scope}{$scope} )
+          or ! $REFRESH_TOKENS{$access_token}{scope}{$scope}
+        ) {
+          $c->app->log->debug( "OAuth2::Server: Refresh token does not have scope ($scope)" );
+          return 0;
+        }
+      }
+    }
+
+    return $REFRESH_TOKENS{$access_token}{client_id};
+  }
+  elsif ( exists( $ACCESS_TOKENS{$access_token} ) ) {
 
     if ( $ACCESS_TOKENS{$access_token}{expires} <= time ) {
       $c->app->log->debug( "OAuth2::Server: Access token has expired" );

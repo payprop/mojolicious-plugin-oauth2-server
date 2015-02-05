@@ -114,6 +114,44 @@ note( "access token expired" );
 $t->get_ok('/api/eat')->status_is( 401 );
 $t->get_ok('/api/sleep')->status_is( 401 );
 
+note( "refresh token does not expire" );
+
+$t->post_ok( $token_route => form => {
+  %valid_token_params,
+  grant_type    => 'refresh_token',
+  refresh_token => $refresh_token,
+} )
+  ->status_is( 200 )
+  ->header_is( 'Cache-Control' => 'no-store' )
+  ->header_is( 'Pragma'        => 'no-cache' )
+;
+
+cmp_deeply(
+  $t->tx->res->json,
+  {
+    access_token  => re( '^.{48,52}$' ),
+    token_type    => 'bearer',
+    expires_in    => $TTL,
+    refresh_token => re( '^.{48,52}$' ),
+  },
+  'json_is_deeply'
+);
+
+$access_token         = $t->tx->res->json->{access_token};
+my $new_refresh_token = $t->tx->res->json->{refresh_token};
+
+note( "previous refresh token revoked after using it" );
+
+$t->post_ok( $token_route => form => {
+  %valid_token_params,
+  grant_type    => 'refresh_token',
+  refresh_token => $refresh_token,
+} )
+  ->status_is( 400 )
+  ->header_is( 'Cache-Control' => 'no-store' )
+  ->header_is( 'Pragma'        => 'no-cache' )
+;
+
 note( "new auth code request" );
 $t->get_ok( $auth_route => form => \%valid_auth_params )
   ->status_is( 302 )
