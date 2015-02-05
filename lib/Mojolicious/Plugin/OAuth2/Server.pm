@@ -20,7 +20,7 @@ and OAuth2 Resource Server (RS) using Mojolicious. It implements the necessary
 flows and checks leaving you to add functions that are necessary, for example,
 to verify an auth code (AC), access token (AT), etc.
 
-In its simplest form you can call the plugin with just a config of known clients
+In its simplest form you can call the plugin with just a hashref of known clients
 and the code will "just work" - however in doing this you will not be able to
 run a multi process persistent OAuth2 AS/RS as the known ACs and ATs will not be
 shared between processes and will be lost on a restart.
@@ -92,7 +92,6 @@ Or full fat app:
 
     ...
 
-    my $oauth2_server_config = $self->plugin('Config')->{oauth2_server};
     $self->plugin( 'OAuth2::Server' => $oauth2_server_config );
   }
 
@@ -117,22 +116,72 @@ marked here with a *
 =head2 authorize_route
 
 The route that the Client calls to get an authorization code. Defaults to
-/oauth/authorize
+GET /oauth/authorize
 
 =head2 access_token_route
 
 The route the the Client calls to get an access token. Defaults to
-/oauth/access_token
+POST /oauth/access_token
 
-=head1 auth_code_ttl
+=head2 auth_code_ttl
 
 The validity period of the generated authorization code in seconds. Defaults to
 600 seconds (10 minutes)
 
-=head1 access_token_ttl
+=head2 access_token_ttl
 
 The validity period of the generated access token in seconds. Defaults to 3600
 seconds (1 hour)
+
+=head2 clients
+
+A hashref of client details keyed like so:
+
+  clients => {
+    $client_id => {
+      client_secret => $client_secret
+      scopes        => {
+        eat       => 1,
+        drink     => 0,
+        sleep     => 1,
+      },
+    },
+  },
+
+Note the clients config is not required if you add the verify_client callback,
+but is necessary for running the plugin in its simplest form (when there are
+*no* callbacks provided)
+
+=head2 login_resource_owner *
+
+A callback that tells the plugin if a Resource Owner (user) is logged in. See
+L<REQUIRED FUNCTIONS>.
+
+=head2 confirm_by_resource_owner *
+
+A callback that tells the plugin if the Resource Owner allowed or disallow
+access to the Resource Server by the Client. See L<REQUIRED FUNCTIONS>.
+
+=head2 verify_client *
+
+A callback that tells the plugin if a Client is know and given the scopes is
+allowed to ask for an authorization code. See L<REQUIRED FUNCTIONS>.
+
+=head2 store_auth_code *
+
+A callback to store the generated authorization code. See L<REQUIRED FUNCTIONS>.
+
+=head2 verify_auth_code *
+
+A callback to verify an authorization code. See L<REQUIRED FUNCTIONS>.
+
+=head2 store_access_token *
+
+A callback to store generated access / refresh tokens. See L<REQUIRED FUNCTIONS>.
+
+=head2 verify_access_token *
+
+A callback to verify an access token. See L<REQUIRED FUNCTIONS>.
 
 =cut
 
@@ -162,6 +211,15 @@ certain functions that the plugin expects to call
 
   $self->register($app, \%config);
 
+=head2 oauth
+
+Checks if there is a valid Authorization: Bearer header with a valid access
+token and if the access token has the requisite scopes. The scopes are optional:
+
+    if ( ! $c->oauth( @scopes ) ) {
+      return $c->render( status => 401, text => 'Unauthorized' );
+    }
+
 =cut
 
 sub register {
@@ -175,11 +233,11 @@ sub register {
     ! exists( $config->{clients} )
     # we must know how to verify clients and tokens
     and (
-      ! exists( $config->{verify_client} )
-      or ! exists( $config->{store_auth_code} )
-      or ! exists( $config->{verify_auth_code} )
-      or ! exists( $config->{store_access_token} )
-      or ! exists( $config->{verify_access_token} )
+      ! $config->{verify_client}
+      and ! $config->{store_auth_code}
+      and ! $config->{verify_auth_code}
+      and ! $config->{store_access_token}
+      and ! $config->{verify_access_token}
     )
   ) {
     croak "OAuth2::Server config must provide either clients or overrides"
@@ -388,8 +446,201 @@ sub _generate_access_token {
   );
 }
 
+sub _verify_access_token_and_scope {
+  my ( $app,$config,$refresh_token,$c,@scopes ) = @_;
+
+  my $verify_access_token_sub
+    = $config->{verify_access_token} // \&_verify_access_token;
+
+  my $access_token;
+
+  if ( ! $refresh_token ) {
+    my $auth_header = $c->req->headers->header( 'Authorization' );
+    my ( $auth_type,$auth_access_token ) = split( / /,$auth_header );
+
+    if ( $auth_type ne 'Bearer' ) {
+      $c->app->log->debug( "OAuth2::Server: Auth type is not 'Bearer'" );
+      return 0;
+    } else {
+      $access_token = $auth_access_token;
+    }
+  } else {
+    $access_token = $refresh_token;
+  }
+  
+  return $verify_access_token_sub->( $c,$access_token,\@scopes );
+}
+
+sub _revoke_access_token {
+  my ( $c,$access_token ) = @_;
+
+  # need to revoke both the refresh token and the access token
+  delete( $ACCESS_TOKENS{ $ACCESS_TOKENS{$access_token}{refresh_token} } );
+  delete( $ACCESS_TOKENS{$access_token} );
+}
+
+sub _revoke_refresh_token {
+  my ( $c,$refresh_token ) = @_;
+
+  delete( $REFRESH_TOKENS{$refresh_token} );
+}
+
 =head1 REQUIRED FUNCTIONS
 
+These are the callbacks necessary to use the plugin in a more realistic way, and
+are required to make the auth code, access token, refresh token, etc available
+across several processes and persistent.
+
+The examples below use pseudocode for the code that would be bespoke to your
+application - such as finding access codes in the database, and so on. You can
+refer to the tests in t/ and examples in examples/ in this distribution for how
+it could be done, but really you should be storing the data in a scalable and
+persistent data store.
+
+=cut
+
+=head2 login_resource_owner
+
+A callback to tell the plugin if the Resource Owner is logged in. It is passed
+the Mojolicious controller object. It should return 1 if the Resource Owner is
+logged in, otherwise it should call the redirect_to method on the controller
+and return 0:
+
+  my $resource_owner_logged_in_sub = sub {
+    my ( $c ) = @_;
+
+    if ( ! $c->session( 'logged_in' ) ) {
+      # we need to redirect back to the /oauth/authorize route after
+      # login (with the original params)
+      my $uri = join( '?',$c->url_for('current'),$c->url_with->query );
+      $c->flash( 'redirect_after_login' => $uri );
+      $c->redirect_to( '/login' );
+      return 0;
+    }
+
+    return 1;
+  };
+
+=head2 confirm_by_resource_owner
+
+A callback to tell the plugin if the Resource Owner allowed or denied access to
+the Resource Server by the Client. It is passed the Mojolicious controller
+object, the client id, and an array reference of scopes requested by the client.
+
+It should return 1 if access is allowed, 0 if access is not allow, otherwise it
+should call the redirect_to method on the controller and return undef:
+
+  my $resource_owner_confirm_scopes_sub = sub {
+    my ( $c,$client_id,$scopes_ref ) = @_;
+
+    my $is_allowed = $c->flash( "oauth_${client_id}" );
+
+    # if user hasn't yet allowed the client access, or if they denied
+    # access last time, we check [again] with the user for access
+    if ( ! $is_allowed ) {
+      $c->flash( client_id => $client_id );
+      $c->flash( scopes    => $scopes_ref );
+
+      my $uri = join( '?',$c->url_for('current'),$c->url_with->query );
+      $c->flash( 'redirect_after_login' => $uri );
+      $c->redirect_to( '/confirm_scopes' );
+    }
+
+    return $is_allowed;
+  };
+
+=head2 verify_client
+
+Reference: L<http://tools.ietf.org/html/rfc6749#section-4.1.1>
+
+A callback to verify if the client asking for an authorization code is known
+to the Resource Server and allowed to get an authorization code for the passed
+scopes.
+
+The callback is passed the Mojolicious controller object, the client id, and an
+array reference of request scopes.  The callback should return a list with two
+elements. The first element is either 1 or 0 to say that the client is allowed
+or disallowed, the second element should be the error message in the case of the
+client being disallowed:
+
+  my $verify_client_sub = sub {
+    my ( $c,$client_id,$scopes_ref ) = @_;
+
+    # get client info from the database
+    if ( $client = _load_client_data( $client_id ) ) {
+
+        foreach my $scope ( @{ $scopes_ref // [] } ) {
+
+          if ( ! exists( $client->{scopes}{$scope} ) ) {
+            $c->app->log->debug( "Client lacks scope ($scope)" );
+            return ( 0,'invalid_scope' );
+          } elsif ( ! $client->{scopes}{$scope} ) {
+            $c->app->log->debug( "Client cannot scope ($scope)" );
+            return ( 0,'access_denied' );
+          }
+        }
+
+        return ( 1 );
+    }
+
+    $c->app->log->debug( "Client ($client_id) does not exist" );
+    return ( 0,'unauthorized_client' );
+  };
+
+=cut
+
+sub _verify_client {
+  my ( $c,$client_id,$scopes_ref ) = @_;
+
+  if ( my $client = $CLIENTS{$client_id} ) {
+
+      foreach my $scope ( @{ $scopes_ref // [] } ) {
+
+        if ( ! exists( $CLIENTS{$client_id}{scopes}{$scope} ) ) {
+          $c->app->log->debug( "OAuth2::Server: Client lacks scope ($scope)" );
+          return ( 0,'invalid_scope' );
+        } elsif ( ! $CLIENTS{$client_id}{scopes}{$scope} ) {
+          $c->app->log->debug( "OAuth2::Server: Client cannot scope ($scope)" );
+          return ( 0,'access_denied' );
+        }
+      }
+
+      return ( 1 );
+  }
+
+  $c->app->log->debug( "OAuth2::Server: Client ($client_id) does not exist" );
+  return ( 0,'unauthorized_client' );
+}
+
+=head2 store_auth_code
+
+A callback to allow you to store the generated authorization code. The callback
+is passed the Mojolicious controller object, the generated auth code, the client
+id, the time the auth code expires (seconds since Unix epoch), the Client
+redirect URI, and a list of the scopes requested by the Client.
+
+You should save the information to your data store, it can then be retrieved by
+the verify_auth_code callback for verification:
+
+  my $store_auth_code_sub = sub {
+    my ( $c,$auth_code,$client_id,$expires_at,$uri,@scopes ) = @_;
+
+    my $user_id = $c->session( 'user_id' );
+
+    my $auth_code_rs = $c->db->resultset( 'AuthCode' )->create({
+      client_id     => $client_id,
+      user_id       => $user_id,
+      auth_code     => $auth_code,
+      expires       => $expires_at,
+      redirect_uri  => $uri,
+    });
+
+    foreach my $scope ( @scopes ) {
+      $auth_code_rs->create_related( 'auth_code_scope',$scope );
+    }
+
+    return;
+  };
 
 =cut
 
@@ -407,6 +658,71 @@ sub _store_auth_code {
 
   return 1;
 }
+
+=head2 verify_auth_code
+
+Reference: L<http://tools.ietf.org/html/rfc6749#section-4.1.3>
+
+A callback to verify the authorization code passed from the Client to the
+Authorization Server. The callback is passed the Mojolicious controller object,
+the client_id, the client_secret, the authorization code, and the redirect uri.
+
+The callback should verify the authorization code using the rules defined in
+the reference RFC above, and return a list with 3 elements. The first element
+should be a client identifier (a scalar, or reference) in the case of a valid
+authorization code or 0 in the case of an invalid authorization code. The second
+element should be the error message in the case of an invalid authorization
+code. The third element should be a hash reference of scopes as requested by the
+client in the original call for an authorization code:
+
+
+  my $verify_auth_code_sub = sub {
+    my ( $c,$client_id,$client_secret,$auth_code,$uri ) = @_;
+
+    my $auth_code = $c->db->resultset( 'AuthCode' )->search({
+      client_id    => $client_id,
+      auth_code    => $auth_code,
+    });
+
+    $auth_code || return ( 0,'unauthorized_client' );
+
+    return ( 0,'invalid_grant' )
+      if ( $auth_code->client->secret ne $client_secret );
+
+    if (
+      $auth_code->verified
+      or $auth_code->revoked
+      or $auth_code->redirect_uri ne $uri
+      or $auth_code->expires <= time
+    ) {
+
+      if ( $auth_code->verified ) {
+        # the auth code has been used before, revoke auth code and access tokens
+        $auth_code->revoked( 1 );
+
+        foreach my $access_token( @{ $auth_code->access_token->all // [] } ) {
+          $access_token->revoked( 1 );
+          $access_token->update;
+        }
+
+        $auth_code->update;
+      }
+
+      return ( 0,'invalid_grant' );
+    }
+
+    $auth_code->verified( 1 );
+    $auth_code->update;
+
+    # scopes are those that were requested in the authorization request, not
+    # those stored in the client (i.e. what the auth request restriced scopes
+    # to and not everything the client is capable of)
+    my %scopes = map { $_ => 1 } @{ $auth_code->scopes->all // [] };
+
+    return ( $client_id,undef,\%scopes );
+  };
+
+=cut
 
 sub _verify_auth_code {
   my ( $c,$client_id,$client_secret,$auth_code,$uri ) = @_;
@@ -445,58 +761,38 @@ sub _verify_auth_code {
 
     return ( 0,'invalid_grant' );
   } else {
-    return ( 1,$client_id,$AUTH_CODES{$auth_code}{scope} );
+    return ( 1,undef,$AUTH_CODES{$auth_code}{scope} );
   }
 
 }
 
-sub _verify_client {
-  my ( $c,$client_id,$scopes_ref ) = @_;
+=head2 store_access_token
 
-  if ( my $client = $CLIENTS{$client_id} ) {
+A callback to allow you to store the generated access and refresh tokens. The
+callback is passed the Mojolicious controller object, the client identifier as
+returned from the verify_auth_code callback, the authorization code, the access
+token, the refresh_token, the validity period in seconds, and the scope returned
+from the verify_auth_code callback.
 
-      foreach my $scope ( @{ $scopes_ref // [] } ) {
+Note that the passed authorization code could be undefined, in which case the
+access token and refresh tokens were requested by the Client by the use of an
+existing refresh token. In this case you should revoke the existing access and
+refresh tokens.
 
-        if ( ! exists( $CLIENTS{$client_id}{scopes}{$scope} ) ) {
-          $c->app->log->debug( "OAuth2::Server: Client lacks scope ($scope)" );
-          return ( 0,'invalid_scope' );
-        } elsif ( ! $CLIENTS{$client_id}{scopes}{$scope} ) {
-          $c->app->log->debug( "OAuth2::Server: Client cannot scope ($scope)" );
-          return ( 0,'access_denied' );
-        }
-      }
+The callback does not need to return anything.
 
-      return ( 1 );
-  }
+You should save the information to your data store, it can then be retrieved by
+the verify_auth_code callback for verification:
 
-  $c->app->log->debug( "OAuth2::Server: Client ($client_id) does not exist" );
-  return ( 0,'unauthorized_client' );
-}
+  my $store_access_token_sub = sub {
+    my (
+      $c,$client,$auth_code,$access_token,$refresh_token,$expires_in,$scope
+    ) = @_;
 
-sub _verify_access_token_and_scope {
-  my ( $app,$config,$refresh_token,$c,@scopes ) = @_;
+    return;
+  };
 
-  my $verify_access_token_sub
-    = $config->{verify_access_token} // \&_verify_access_token;
-
-  my $access_token;
-
-  if ( ! $refresh_token ) {
-    my $auth_header = $c->req->headers->header( 'Authorization' );
-    my ( $auth_type,$auth_access_token ) = split( / /,$auth_header );
-
-    if ( $auth_type ne 'Bearer' ) {
-      $c->app->log->debug( "OAuth2::Server: Auth type is not 'Bearer'" );
-      return 0;
-    } else {
-      $access_token = $auth_access_token;
-    }
-  } else {
-    $access_token = $refresh_token;
-  }
-  
-  return $verify_access_token_sub->( $c,$access_token,\@scopes );
-}
+=cut
 
 sub _store_access_token {
   my (
@@ -543,19 +839,25 @@ sub _store_access_token {
   return $c_id;
 }
 
-sub _revoke_access_token {
-  my ( $c,$access_token ) = @_;
+=head2 verify_access_token
 
-  # need to revoke both the refresh token and the access token
-  delete( $ACCESS_TOKENS{ $ACCESS_TOKENS{$access_token}{refresh_token} } );
-  delete( $ACCESS_TOKENS{$access_token} );
-}
+Reference: L<http://tools.ietf.org/html/rfc6749#section-7>
 
-sub _revoke_refresh_token {
-  my ( $c,$refresh_token ) = @_;
+A callback to verify the acccess token. The callback is passed the Mojolicious
+controller object, the access token, and an optional reference to a list of the
+scopes.
 
-  delete( $REFRESH_TOKENS{$refresh_token} );
-}
+The callback should verify the authorization code using the rules defined in
+the reference RFC above, and return either 1 for a valid access token or 0 for
+an invalid access token.
+
+  my $verify_access_token_sub = sub {
+    my ( $c,$access_token,$scopes_ref ) = @_;
+
+    return 0;
+  };
+
+=cut
 
 sub _verify_access_token {
   my ( $c,$access_token,$scopes_ref ) = @_;
@@ -626,7 +928,11 @@ Lee Johnson - C<leejo@cpan.org>
 
 =head1 LICENSE
 
-This software is licensed under the same terms as Perl itself.
+This library is free software; you can redistribute it and/or modify it under
+the same terms as Perl itself. If you would like to contribute documentation
+please raise an issue / pull request:
+
+    https://github.com/leejo/mojolicious-plugin-oauth2-server
 
 =cut
 

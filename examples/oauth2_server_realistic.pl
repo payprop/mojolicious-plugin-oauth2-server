@@ -132,8 +132,6 @@ my $verify_auth_code_sub = sub {
   return ( 0,'invalid_grant' )
     if ( $client_secret ne $client->{client_secret} );
 
-  my $error = undef;
-
   if (
     ! exists( $oauth2_data->{auth_codes}{$auth_code} )
     or ! exists( $oauth2_data->{clients}{$client_id} )
@@ -163,7 +161,7 @@ my $verify_auth_code_sub = sub {
 
   save_oauth2_data( $oauth2_data );
 
-  return ( $client_id,$error,$scope );
+  return ( $client_id,undef,$scope );
 };
 
 my $store_access_token_sub = sub {
@@ -293,8 +291,10 @@ sub _revoke_access_token {
 plugin 'OAuth2::Server' => {
   auth_code_ttl             => 300,
   access_token_ttl          => 600,
+
   login_resource_owner      => $resource_owner_logged_in_sub,
   confirm_by_resource_owner => $resource_owner_confirm_scopes_sub,
+
   verify_client             => $verify_client_sub,
   store_auth_code           => $store_auth_code_sub,
   verify_auth_code          => $verify_auth_code_sub,

@@ -1,2 +1,4 @@
+- create example using sqlite3 db with dbix class accessors so can
+  use that code in the perldoc examples
 - signing access tokens
 - configure to only function as Auth Server or Resource Server
