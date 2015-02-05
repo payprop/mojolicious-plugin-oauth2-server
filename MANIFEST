@@ -11,6 +11,7 @@ t/010_basic.t
 t/015_overrides.t
 t/025_no_config.t
 t/030_expiry_config.t
+t/035_login_confirm_error.t
 t/AllTests.pm
 examples/README
 examples/oauth2_client.pl
