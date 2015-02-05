@@ -2,11 +2,10 @@ package Mojolicious::Plugin::OAuth2::Server;
 
 =head1 NAME
 
-Mojolicious::Plugin::OAuth2::Server - Auth against OAuth2 APIs
+Mojolicious::Plugin::OAuth2::Server - Easier(?) implementation of an OAuth2
+Authorization and Resource Server with Mojolicious
 
 =head1 DESCRIPTION
-
-This Mojolicious plugin allows you to
 
 Note that OAuth2 requires https, so you need to have the optional Mojolicious
 dependency required to support it. Run the command below to check if
@@ -439,15 +438,19 @@ sub _verify_access_token {
 
 1;
 
-=head2 References
+=head2 REFERENCES
 
 =over 4
 
 =item * L<http://oauth.net/documentation/>
 
+=item * L<http://tools.ietf.org/html/rfc6749>
+
 =back
 
-=head1 SYNOPSIS
+=head1 SEE ALSO
+
+L<Mojolicious::Plugin::OAuth2> - A client side OAuth2 Mojolicious plugin
 
 =head1 AUTHOR
 

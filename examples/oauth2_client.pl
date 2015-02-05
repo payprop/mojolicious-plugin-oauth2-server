@@ -25,8 +25,8 @@ get '/' => sub {
 get '/auth' => sub {
   my $self = shift;
   if ( my $error = $self->param( 'error' ) ) {
-    return $self->render_exception(
-      "Call to overly_attached_social_network returned: $error"
+    return $self->render(
+      text => "Call to overly_attached_social_network returned: $error"
     );
   } else {
     $self->delay(

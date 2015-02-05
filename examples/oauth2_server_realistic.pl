@@ -341,7 +341,9 @@ any '/confirm_scopes' => sub {
   if ( my $redirect_uri = $c->flash( 'redirect_after_login' ) ) {
     $c->flash( 'redirect_after_login' => $redirect_uri );
   } else {
-    $c->render_exception( "How did you get here?" );
+    return $c->render(
+      text => "Got to /confirm_scopes without redirect_after_login?"
+    );
   }
 
   if ( $c->req->method eq 'POST' ) {
