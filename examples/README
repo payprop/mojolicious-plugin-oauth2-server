@@ -75,11 +75,11 @@ response will also contain the refresh token, type, and the expires_in details.
 So on the command line (which we are substituting for calls that would be made
 by TrendyNewService here):
 
-# should say "Annoyed Friends":
+# should say "Lee Annoyed Friends":
 curl -k -H"Authorization: Bearer $token" \
   https://127.0.0.1:3000/api/annoy_friends
 
-# should say "Posted Image":
+# should say "Lee Posted Image":
 curl -k -H"Authorization: Bearer $token" \
   https://127.0.0.1:3000/api/post_image
 

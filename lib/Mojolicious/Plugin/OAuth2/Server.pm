@@ -311,29 +311,29 @@ sub _access_token_request {
 
   my $json_response = {};
   my $status        = 400;
-  my ( $c_id,$error,$scope );
+  my ( $client,$error,$scope );
 
   if ( $grant_type eq 'refresh_token' ) {
-    $c_id = _verify_access_token_and_scope( $app,$config,$refresh_token,$self );
+    $client = _verify_access_token_and_scope( $app,$config,$refresh_token,$self );
   } else {
     my $verify_auth_code_sub = $config->{verify_auth_code} // \&_verify_auth_code;
-    ( $c_id,$error,$scope ) = $verify_auth_code_sub->(
+    ( $client,$error,$scope ) = $verify_auth_code_sub->(
       $self,$client_id,$client_secret,$auth_code,$url
     );
   }
 
-  if ( $c_id ) {
+  if ( $client ) {
 
     $self->app->log->debug( "OAuth2::Server: Generating access token for $client_id" );
 
     my ( $access_token,$refresh_token,$expires_in )
-      = _generate_access_token( $c_id,$config->{access_token_ttl} );
+      = _generate_access_token( $client,$config->{access_token_ttl} );
 
     my $store_access_token_sub
       = $config->{store_access_token} // \&_store_access_token;
 
     $store_access_token_sub->(
-      $self,$c_id,$auth_code,$access_token,$refresh_token,$expires_in,$scope
+      $self,$client,$auth_code,$access_token,$refresh_token,$expires_in,$scope
     );
 
     $status        = 200;

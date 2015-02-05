@@ -168,16 +168,17 @@ my $verify_auth_code_sub = sub {
 
 my $store_access_token_sub = sub {
   my (
-    $c,$client_id,$auth_code,$access_token,$refresh_token,$expires_in,$scope
+    $c,$client,$auth_code,$access_token,$refresh_token,$expires_in,$scope
   ) = @_;
 
   my $oauth2_data = load_oauth2_data();
+  my $user_id;
 
   if ( ! defined( $auth_code ) ) {
     # must have generated an access token via a refresh token so revoke the old
     # access token and refresh token and update the oauth2_data->{auth_codes}
     # hash to store the new one (also copy across scopes if missing)
-    $auth_code = $oauth2_data->{auth_codes_by_client}{$client_id};
+    $auth_code = $oauth2_data->{auth_codes_by_client}{$client->{client_id}};
 
     my $prev_access_token = $oauth2_data->{auth_codes}{$auth_code}{access_token};
 
@@ -188,29 +189,38 @@ my $store_access_token_sub = sub {
 
     $c->app->log->debug( "OAuth2::Server: Revoking old access tokens (refresh)" );
     $oauth2_data = _revoke_access_token( $c,$prev_access_token );
+
+  } else {
+    $user_id = $oauth2_data->{auth_codes}{$auth_code}{user_id};
+  }
+
+  if ( ref( $client ) ) {
+    $scope  = $client->{scope};
+    $client = $client->{client_id};
+  }
+
+  # if the client has en existing refresh token we need to revoke it
+  if ( my $prev_r_token = $oauth2_data->{refresh_tokens_by_client}{$client} ) {
+    $user_id = delete( $oauth2_data->{refresh_tokens}{$prev_r_token} )->{user_id};
   }
 
   $oauth2_data->{access_tokens}{$access_token} = {
     scope         => $scope,
     expires       => time + $expires_in,
     refresh_token => $refresh_token,
-    client_id     => $client_id,
-    user_id       => $oauth2_data->{auth_codes}{$auth_code}{user_id},
+    client_id     => $client,
+    user_id       => $user_id,
   };
 
   $oauth2_data->{refresh_tokens}{$refresh_token} = {
     scope         => $scope,
-    client_id     => $client_id,
+    client_id     => $client,
+    user_id       => $user_id,
   };
 
   $oauth2_data->{auth_codes}{$auth_code}{access_token} = $access_token;
 
-  # if the client has en existing refresh token we need to revoke it
-  if ( my $prev_r_token = $oauth2_data->{refresh_tokens_by_client}{$client_id} ) {
-    delete( $oauth2_data->{refresh_tokens}{$prev_r_token} );
-  }
-
-  $oauth2_data->{refresh_tokens_by_client}{$client_id} = $refresh_token;
+  $oauth2_data->{refresh_tokens_by_client}{$client} = $refresh_token;
 
   save_oauth2_data( $oauth2_data );
   return;
@@ -235,7 +245,7 @@ my $verify_access_token_sub = sub {
       }
     }
 
-    return $oauth2_data->{refresh_tokens}{$access_token}{client_id};
+    return $oauth2_data->{refresh_tokens}{$access_token};
   }
   if ( exists( $oauth2_data->{access_tokens}{$access_token} ) ) {
 
@@ -258,7 +268,7 @@ my $verify_access_token_sub = sub {
     }
 
     $c->app->log->debug( "OAuth2::Server: Access token is valid" );
-    return $oauth2_data->{access_tokens}{$access_token}{client_id};
+    return $oauth2_data->{access_tokens}{$access_token};
   }
 
   $c->app->log->debug( "OAuth2::Server: Access token does not exist" );
@@ -296,20 +306,31 @@ group {
   # /api - must be authorized
   under '/api' => sub {
     my ( $c ) = @_;
-    return 1 if $c->oauth;
+    if ( my $auth_info = $c->oauth ) {
+      $c->stash( oauth_info => $auth_info ); 
+      return 1;
+    }
     $c->render( status => 401, text => 'Unauthorized' );
     return undef;
   };
 
-  any '/annoy_friends' => sub { shift->render( text => "Annoyed Friends" ); };
-  any '/post_image'    => sub { shift->render( text => "Posted Image" ); };
+  any '/annoy_friends' => sub {
+    my ( $c ) = @_;
+    my $user_id = $c->stash( 'oauth_info' )->{user_id};
+    $c->render( text => "$user_id Annoyed Friends" );
+  };
+  any '/post_image'    => sub {
+    my ( $c ) = @_;
+    my $user_id = $c->stash( 'oauth_info' )->{user_id};
+    $c->render( text => "$user_id Posted Image" );
+  };
 };
 
 any '/api/track_location' => sub {
   my ( $c ) = @_;
-  $c->oauth( 'track_location' )
+  my $auth_info = $c->oauth( 'track_location' )
       || return $c->render( status => 401, text => 'You cannot track location' );
-  $c->render( text => "Target acquired" );
+  $c->render( text => "Target acquired: " . $auth_info->{user_id} );
 };
 
 get '/' => sub {
