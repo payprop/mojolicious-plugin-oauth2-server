@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.02
+0.03
 
 =head1 SYNOPSIS
 
@@ -195,7 +195,7 @@ use Time::HiRes qw/ gettimeofday /;
 use MIME::Base64 qw/ encode_base64 decode_base64 /;
 use Carp qw/croak/;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 my %CLIENTS;
 my %AUTH_CODES;

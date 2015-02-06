@@ -89,10 +89,10 @@ $t->post_ok( $token_route => form => \%valid_token_params )
 cmp_deeply(
   $t->tx->res->json,
   {
-    access_token  => re( '^.{48,52}$' ),
+    access_token  => re( '^.+$' ),
     token_type    => 'bearer',
     expires_in    => $TTL,
-    refresh_token => re( '^.{48,52}$' ),
+    refresh_token => re( '^.+$' ),
   },
   'json_is_deeply'
 );
@@ -129,10 +129,10 @@ $t->post_ok( $token_route => form => {
 cmp_deeply(
   $t->tx->res->json,
   {
-    access_token  => re( '^.{48,52}$' ),
+    access_token  => re( '^.+$' ),
     token_type    => 'bearer',
     expires_in    => $TTL,
-    refresh_token => re( '^.{48,52}$' ),
+    refresh_token => re( '^.+$' ),
   },
   'json_is_deeply'
 );
