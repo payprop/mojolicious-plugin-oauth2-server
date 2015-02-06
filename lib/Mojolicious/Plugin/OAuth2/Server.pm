@@ -217,7 +217,7 @@ plugin in its simplest form.
 Checks if there is a valid Authorization: Bearer header with a valid access
 token and if the access token has the requisite scopes. The scopes are optional:
 
-    if ( ! $c->oauth( @scopes ) ) {
+    unless ( my $oauth_details = $c->oauth( @scopes ) ) {
       return $c->render( status => 401, text => 'Unauthorized' );
     }
 
@@ -520,14 +520,17 @@ and return 0:
     return 1;
   };
 
+Note that you need to pass on the current url (with query) so it can be returned
+to after the user has logged in.
+
 =head2 confirm_by_resource_owner
 
 A callback to tell the plugin if the Resource Owner allowed or denied access to
 the Resource Server by the Client. It is passed the Mojolicious controller
 object, the client id, and an array reference of scopes requested by the client.
 
-It should return 1 if access is allowed, 0 if access is not allow, otherwise it
-should call the redirect_to method on the controller and return undef:
+It should return 1 if access is allowed, 0 if access is not allowed, otherwise
+it should call the redirect_to method on the controller and return undef:
 
   my $resource_owner_confirm_scopes_sub = sub {
     my ( $c,$client_id,$scopes_ref ) = @_;
@@ -540,6 +543,8 @@ should call the redirect_to method on the controller and return undef:
       $c->flash( client_id => $client_id );
       $c->flash( scopes    => $scopes_ref );
 
+      # we need to redirect back to the /oauth/authorize route after
+      # confirm/deny by resource owner (with the original params)
       my $uri = join( '?',$c->url_for('current'),$c->url_with->query );
       $c->flash( 'redirect_after_login' => $uri );
       $c->redirect_to( '/confirm_scopes' );
@@ -547,6 +552,11 @@ should call the redirect_to method on the controller and return undef:
 
     return $is_allowed;
   };
+
+Note that you need to pass on the current url (with query) so it can be returned
+to after the user has confirmed/denied access, and the confirm/deny result is
+stored in the flash (this could be stored in the user session if you do not want
+the user to confirm/deny every single time the Client requests access).
 
 =head2 verify_client
 
@@ -773,7 +783,7 @@ hard requirement according to the OAuth spec, but i would recommend it).
 The callback does not need to return anything.
 
 You should save the information to your data store, it can then be retrieved by
-the verify_auth_code callback for verification:
+the verify_access_token callback for verification:
 
   my $store_access_token_sub = sub {
     my (
@@ -787,26 +797,25 @@ the verify_auth_code callback for verification:
     my $user_id;
 
     if ( ! defined( $auth_code ) && $old_refresh_token ) {
-      # must have generated an access token via a refresh token so revoke the old
-      # access token and refresh token and update the oauth2_data->{auth_codes}
-      # hash to store the new one (also copy across scopes if missing)
-      my $prt = $c->db->get_collection( 'refresh_tokens' )->find_one({
+      # must have generated an access token via refresh token so revoke the old
+      # access token and refresh token (also copy required data if missing)
+      my $prev_rt = $c->db->get_collection( 'refresh_tokens' )->find_one({
         refresh_token => $old_refresh_token,
       });
 
-      my $pat = $c->db->get_collection( 'access_tokens' )->find_one({
-        access_token => $prt->{access_token},
+      my $prev_at = $c->db->get_collection( 'access_tokens' )->find_one({
+        access_token => $prev_rt->{access_token},
       });
 
       # access tokens can be revoked, whilst refresh tokens can remain so we
       # need to get the data from the refresh token as the access token may
       # no longer exist at the point that the refresh token is used
-      $scope //= $prt->{scope};
-      $user_id = $prt->{user_id};
+      $scope //= $prev_rt->{scope};
+      $user_id = $prev_rt->{user_id};
 
       # need to revoke the access token
       $c->db->get_collection( 'access_tokens' )
-        ->remove({ access_token => $pat->{access_token} });
+        ->remove({ access_token => $prev_at->{access_token} });
 
     } else {
       $user_id = $c->db->get_collection( 'auth_codes' )->find_one({

@@ -190,8 +190,7 @@ my $store_access_token_sub = sub {
 
   if ( ! defined( $auth_code ) && $old_refresh_token ) {
     # must have generated an access token via a refresh token so revoke the old
-    # access token and refresh token and update the oauth2_data->{auth_codes}
-    # hash to store the new one (also copy across scopes if missing)
+    # access token and refresh token (also copy required data if missing)
     my $prt = $c->db->get_collection( 'refresh_tokens' )->find_one({
       refresh_token => $old_refresh_token,
     });
