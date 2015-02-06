@@ -161,7 +161,7 @@ A callback that tells the plugin if a Resource Owner (user) is logged in. See
 
 ## confirm\_by\_resource\_owner \*
 
-A callback that tells the plugin if the Resource Owner allowed or disallow
+A callback that tells the plugin if the Resource Owner allowed or disallowed
 access to the Resource Server by the Client. See ["REQUIRED FUNCTIONS"](#required-functions).
 
 ## verify\_client \*

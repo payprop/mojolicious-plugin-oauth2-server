@@ -161,7 +161,7 @@ L<REQUIRED FUNCTIONS>.
 
 =head2 confirm_by_resource_owner *
 
-A callback that tells the plugin if the Resource Owner allowed or disallow
+A callback that tells the plugin if the Resource Owner allowed or disallowed
 access to the Resource Server by the Client. See L<REQUIRED FUNCTIONS>.
 
 =head2 verify_client *
