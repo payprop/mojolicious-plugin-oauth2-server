@@ -73,10 +73,10 @@ L<IO::Socket::SSL> is installed.
   any '/track_location' => sub {
     my ( $c ) = @_;
 
-    $c->oauth( 'track_location' ) # must have track_location oauth scope
+    my $oauth_details = $c->oauth( 'track_location' )
         || return $c->render( status => 401, text => 'You cannot track location' );
 
-    $c->render( text => "Target acquired" );
+    $c->render( text => "Target acquired: @{[$oauth_details->{user_id}]}" );
   };
 
   app->start;
@@ -100,7 +100,9 @@ Then in your controller:
   sub my_route_name {
     my ( $c ) = @_;
  
-    if ( ! $c->oauth( qw/required scopes to use this route/ ) ) {
+    if ( my $oauth_details = $c->oauth( qw/required scopes/ ) ) {
+      ... # do something, user_id, client_id, etc, available in $oauth_details
+    } else {
       return $c->render( status => 401, text => 'Unauthorized' );
     }
 
@@ -205,7 +207,8 @@ my %REFRESH_TOKENS;
 =head2 register
 
 Registers the plugin with your app - note that you must pass callbacks for
-certain functions that the plugin expects to call
+certain functions that the plugin expects to call if you are not using the
+plugin in its simplest form.
 
   $self->register($app, \%config);
 
