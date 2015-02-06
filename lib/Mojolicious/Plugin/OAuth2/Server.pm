@@ -1058,7 +1058,7 @@ Lee Johnson - C<leejo@cpan.org>
 
 This library is free software; you can redistribute it and/or modify it under
 the same terms as Perl itself. If you would like to contribute documentation
-please raise an issue / pull request:
+or file a bug report then please raise an issue / pull request:
 
     https://github.com/leejo/mojolicious-plugin-oauth2-server
 
