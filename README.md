@@ -13,40 +13,6 @@ Authorization Server / Resource Server with Mojolicious
 
 0.01
 
-# DESCRIPTION
-
-This plugin enables you to easily (?) write an OAuth2 Authorization Server (AS)
-and OAuth2 Resource Server (RS) using Mojolicious. It implements the necessary
-flows and checks leaving you to add functions that are necessary, for example,
-to verify an auth code (AC), access token (AT), etc.
-
-In its simplest form you can call the plugin with just a hashref of known clients
-and the code will "just work" - however in doing this you will not be able to
-run a multi process persistent OAuth2 AS/RS as the known ACs and ATs will not be
-shared between processes and will be lost on a restart.
-
-To use this plugin in a more realistic way you need to at a minimum implement
-the following functions and pass them to the plugin:
-
-    login_resource_owner
-    confirm_by_resource_owner
-    verify_client
-    store_auth_code
-    verify_auth_code
-    store_access_token
-    verify_access_token
-
-These will be explained in more detail below, in ["REQUIRED FUNCTIONS"](#required-functions), and you
-can also see the tests and examples included with this distribution. OAuth2
-seems needlessly complicated at first, hopefully this plugin will clarify the
-various steps and simplify the implementation.
-
-Note that OAuth2 requires https, so you need to have the optional Mojolicious
-dependency required to support it. Run the command below to check if
-[IO::Socket::SSL](https://metacpan.org/pod/IO::Socket::SSL) is installed.
-
-    $ mojo version
-
 # SYNOPSIS
 
     use Mojolicious::Lite;
@@ -108,6 +74,40 @@ Then in your controller:
 
        ...
      }
+
+# DESCRIPTION
+
+This plugin enables you to easily (?) write an OAuth2 Authorization Server (AS)
+and OAuth2 Resource Server (RS) using Mojolicious. It implements the required
+flows and checks leaving you to add functions that are necessary, for example,
+to verify an auth code (AC), access token (AT), etc.
+
+In its simplest form you can call the plugin with just a hashref of known clients
+and the code will "just work" - however in doing this you will not be able to
+run a multi process persistent OAuth2 AS/RS as the known ACs and ATs will not be
+shared between processes and will be lost on a restart.
+
+To use this plugin in a more realistic way you need to at a minimum implement
+the following functions and pass them to the plugin:
+
+    login_resource_owner
+    confirm_by_resource_owner
+    verify_client
+    store_auth_code
+    verify_auth_code
+    store_access_token
+    verify_access_token
+
+These will be explained in more detail below, in ["REQUIRED FUNCTIONS"](#required-functions), and you
+can also see the tests and examples included with this distribution. OAuth2
+seems needlessly complicated at first, hopefully this plugin will clarify the
+various steps and simplify the implementation.
+
+Note that OAuth2 requires https, so you need to have the optional Mojolicious
+dependency required to support it. Run the command below to check if
+[IO::Socket::SSL](https://metacpan.org/pod/IO::Socket::SSL) is installed.
+
+    $ mojo version
 
 # CONFIGURATION
 
