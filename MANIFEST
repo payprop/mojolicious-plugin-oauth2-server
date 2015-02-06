@@ -18,3 +18,4 @@ examples/oauth2_client.pl
 examples/oauth2_db.json
 examples/oauth2_server_simple.pl
 examples/oauth2_server_realistic.pl
+examples/oauth2_server_db.pl
