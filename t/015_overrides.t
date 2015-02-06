@@ -23,7 +23,7 @@ my $verify_client_sub = sub {
 };
 
 my $store_auth_code_sub = sub {
-  my ( $c,$auth_code,$client_id,$expires_at,$url,@scopes ) = @_;
+  my ( $c,$auth_code,$client_id,$expires_in,$url,@scopes ) = @_;
 
   # in reality would store stuff in the database here (or perhaps a
   # correctly scoped hash, but the database is where it should be so

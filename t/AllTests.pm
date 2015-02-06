@@ -108,7 +108,6 @@ sub run {
     { client_id     => 2,       error => 'unauthorized_client', },
     { client_secret => 'wee',   error => 'unauthorized_client', },
   ) {
-    note explain $invalid_params;
     my $expected_error = delete( $invalid_params->{error} );
     $t->post_ok( $token_route => form => {
         %valid_token_params, %{ $invalid_params }

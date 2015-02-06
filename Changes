@@ -1,5 +1,8 @@
 Revision history for Mojolicious-Plugin-OAuth2-Server
 
+0.04     2015-02-06
+        - refatoring and consistency tweaks
+
 0.03     2015-02-06
         - fix regexp in tests to be looser
 

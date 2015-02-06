@@ -105,7 +105,7 @@ my $verify_client_sub = sub {
 };
 
 my $store_auth_code_sub = sub {
-  my ( $c,$auth_code,$client_id,$expires_at,$uri,@scopes ) = @_;
+  my ( $c,$auth_code,$client_id,$expires_in,$uri,@scopes ) = @_;
 
   my $auth_codes = $c->db->get_collection( 'auth_codes' );
 
@@ -113,7 +113,7 @@ my $store_auth_code_sub = sub {
     auth_code    => $auth_code,
     client_id    => $client_id,
     user_id      => $c->session( 'user_id' ),
-    expires      => $expires_at,
+    expires      => time + $expires_in,
     redirect_uri => $uri,
     scope        => { map { $_ => 1 } @scopes },
   });

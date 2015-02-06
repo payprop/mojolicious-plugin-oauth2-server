@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.03
+0.04
 
 =head1 SYNOPSIS
 
@@ -195,7 +195,7 @@ use Time::HiRes qw/ gettimeofday /;
 use MIME::Base64 qw/ encode_base64 decode_base64 /;
 use Carp qw/croak/;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 my %CLIENTS;
 my %AUTH_CODES;
@@ -262,7 +262,8 @@ sub register {
 sub _authorization_request {
   my ( $app,$config,$self ) = @_;
 
-  my ( $c_id,$url,$type,$scope,$state ) = map { $self->param( $_ ) }
+  my ( $c_id,$url,$type,$scope,$state )
+    = map { $self->param( $_ ) // undef }
     qw/ client_id redirect_uri response_type scope state /;
 
   my @scopes = $scope ? split( / /,$scope ) : ();
@@ -315,15 +316,12 @@ sub _authorization_request {
   if ( $res ) {
 
     $self->app->log->debug( "OAuth2::Server: Generating auth code for $c_id" );
-    my ( $auth_code,$expires_at ) = _generate_authorization_code(
-      $c_id,$config->{auth_code_ttl}
+    my ( $auth_code,$expires_in ) = _generate_authorization_code(
+      $config->{auth_code_ttl}
     );
 
-    if ( my $store_auth_code = $config->{store_auth_code} ) {
-      $store_auth_code->( $self,$auth_code,$c_id,$expires_at,$url,@scopes );
-    } else {
-      _store_auth_code( $self,$auth_code,$c_id,$expires_at,$url,@scopes );
-    }
+    my $store_auth_code = $config->{store_auth_code} // \&_store_auth_code;
+    $store_auth_code->( $self,$auth_code,$c_id,$expires_in,$url,@scopes );
 
     $uri->query->append( code  => $auth_code );
 
@@ -345,7 +343,8 @@ sub _authorization_request {
 sub _access_token_request {
   my ( $app,$config,$self ) = @_;
 
-  my ( $client_id,$client_secret,$grant_type,$auth_code,$url,$refresh_token ) = map { $self->param( $_ ) }
+  my ( $client_id,$client_secret,$grant_type,$auth_code,$url,$refresh_token )
+    = map { $self->param( $_ ) // undef }
     qw/ client_id client_secret grant_type code redirect_uri refresh_token /;
 
   if (
@@ -387,7 +386,7 @@ sub _access_token_request {
     $self->app->log->debug( "OAuth2::Server: Generating access token for $client_id" );
 
     my ( $access_token,$refresh_token,$expires_in )
-      = _generate_access_token( $client,$config->{access_token_ttl} );
+      = _generate_access_token( $config->{access_token_ttl} );
 
     my $store_access_token_sub
       = $config->{store_access_token} // \&_store_access_token;
@@ -425,26 +424,26 @@ sub _access_token_request {
 }
 
 sub _generate_authorization_code {
-  my ( $client_id,$ttl ) = @_;
+  my ( $ttl ) = @_;
 
   $ttl //= 600;
   my ( $sec,$usec ) = gettimeofday;
 
   return (
-    encode_base64( join( '-',$sec,$usec,rand(),$client_id ),'' ),
-    time + $ttl
+    encode_base64( join( '-',$sec,$usec,rand() ),'' ),
+    $ttl
   );
 }
 
 sub _generate_access_token {
 
-  my ( $client_id,$ttl ) = @_;
+  my ( $ttl ) = @_;
 
   $ttl //= 3600;
 
   return (
-    ( _generate_authorization_code( $client_id ) )[0],
-    ( _generate_authorization_code( $client_id ) )[0],
+    ( _generate_authorization_code() )[0],
+    ( _generate_authorization_code() )[0],
     $ttl,
   );
 }
@@ -623,14 +622,14 @@ sub _verify_client {
 
 A callback to allow you to store the generated authorization code. The callback
 is passed the Mojolicious controller object, the generated auth code, the client
-id, the time the auth code expires (seconds since Unix epoch), the Client
-redirect URI, and a list of the scopes requested by the Client.
+id, the auth code validity period in seconds, the Client redirect URI, and a list
+of the scopes requested by the Client.
 
 You should save the information to your data store, it can then be retrieved by
 the verify_auth_code callback for verification:
 
   my $store_auth_code_sub = sub {
-    my ( $c,$auth_code,$client_id,$expires_at,$uri,@scopes ) = @_;
+    my ( $c,$auth_code,$client_id,$expires_in,$uri,@scopes ) = @_;
 
     my $auth_codes = $c->db->get_collection( 'auth_codes' );
 
@@ -638,7 +637,7 @@ the verify_auth_code callback for verification:
       auth_code    => $auth_code,
       client_id    => $client_id,
       user_id      => $c->session( 'user_id' ),
-      expires      => $expires_at,
+      expires      => time + $expires_in,
       redirect_uri => $uri,
       scope        => { map { $_ => 1 } @scopes },
     });
@@ -649,11 +648,11 @@ the verify_auth_code callback for verification:
 =cut
 
 sub _store_auth_code {
-  my ( $c,$auth_code,$client_id,$expires_at,$uri,@scopes ) = @_;
+  my ( $c,$auth_code,$client_id,$expires_in,$uri,@scopes ) = @_;
 
   $AUTH_CODES{$auth_code} = {
     client_id     => $client_id,
-    expires       => $expires_at,
+    expires       => time + $expires_in,
     redirect_uri  => $uri,
     scope         => { map { $_ => 1 } @scopes },
   };

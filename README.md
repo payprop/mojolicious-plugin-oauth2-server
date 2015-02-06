@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 # VERSION
 
-0.03
+0.04
 
 # SYNOPSIS
 
@@ -321,14 +321,14 @@ client being disallowed:
 
 A callback to allow you to store the generated authorization code. The callback
 is passed the Mojolicious controller object, the generated auth code, the client
-id, the time the auth code expires (seconds since Unix epoch), the Client
-redirect URI, and a list of the scopes requested by the Client.
+id, the auth code validity period in seconds, the Client redirect URI, and a list
+of the scopes requested by the Client.
 
 You should save the information to your data store, it can then be retrieved by
 the verify\_auth\_code callback for verification:
 
     my $store_auth_code_sub = sub {
-      my ( $c,$auth_code,$client_id,$expires_at,$uri,@scopes ) = @_;
+      my ( $c,$auth_code,$client_id,$expires_in,$uri,@scopes ) = @_;
 
       my $auth_codes = $c->db->get_collection( 'auth_codes' );
 
@@ -336,7 +336,7 @@ the verify\_auth\_code callback for verification:
         auth_code    => $auth_code,
         client_id    => $client_id,
         user_id      => $c->session( 'user_id' ),
-        expires      => $expires_at,
+        expires      => time + $expires_in,
         redirect_uri => $uri,
         scope        => { map { $_ => 1 } @scopes },
       });

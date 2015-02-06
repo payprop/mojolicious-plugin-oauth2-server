@@ -100,7 +100,7 @@ my $verify_client_sub = sub {
 };
 
 my $store_auth_code_sub = sub {
-  my ( $c,$auth_code,$client_id,$expires_at,$uri,@scopes ) = @_;
+  my ( $c,$auth_code,$client_id,$expires_in,$uri,@scopes ) = @_;
 
   my $oauth2_data = load_oauth2_data();
 
@@ -109,7 +109,7 @@ my $store_auth_code_sub = sub {
   $oauth2_data->{auth_codes}{$auth_code} = {
     client_id     => $client_id,
     user_id       => $user_id,
-    expires       => $expires_at,
+    expires       => time + $expires_in,
     redirect_uri  => $uri,
     scope         => { map { $_ => 1 } @scopes },
   };
