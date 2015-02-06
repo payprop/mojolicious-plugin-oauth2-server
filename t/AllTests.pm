@@ -126,10 +126,10 @@ sub run {
   cmp_deeply(
     $t->tx->res->json,
     {
-      access_token  => re( '^.{48,52}$' ),
+      access_token  => re( '^.+$' ),
       token_type    => 'bearer',
       expires_in    => '3600',
-      refresh_token => re( '^.{48,52}$' ),
+      refresh_token => re( '^.+$' ),
     },
     'json_is_deeply'
   );
@@ -168,10 +168,10 @@ sub run {
   cmp_deeply(
     $t->tx->res->json,
     {
-      access_token  => re( '^.{48,52}$' ),
+      access_token  => re( '^.+$' ),
       token_type    => 'bearer',
       expires_in    => '3600',
-      refresh_token => re( '^.{48,52}$' ),
+      refresh_token => re( '^.+$' ),
     },
     'json_is_deeply'
   );

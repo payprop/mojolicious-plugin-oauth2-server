@@ -199,8 +199,6 @@ my %CLIENTS;
 my %AUTH_CODES;
 my %ACCESS_TOKENS;
 my %REFRESH_TOKENS;
-my %AUTH_CODES_BY_CLIENT;
-my %REFRESH_TOKENS_BY_CLIENT;
 
 =head1 METHODS
 
@@ -369,10 +367,11 @@ sub _access_token_request {
 
   my $json_response = {};
   my $status        = 400;
-  my ( $client,$error,$scope );
+  my ( $client,$error,$scope,$old_refresh_token );
 
   if ( $grant_type eq 'refresh_token' ) {
     $client = _verify_access_token_and_scope( $app,$config,$refresh_token,$self );
+    $old_refresh_token = $refresh_token;
   } else {
     my $verify_auth_code_sub = $config->{verify_auth_code} // \&_verify_auth_code;
     ( $client,$error,$scope ) = $verify_auth_code_sub->(
@@ -391,7 +390,8 @@ sub _access_token_request {
       = $config->{store_access_token} // \&_store_access_token;
 
     $store_access_token_sub->(
-      $self,$client,$auth_code,$access_token,$refresh_token,$expires_in,$scope
+      $self,$client,$auth_code,$access_token,$refresh_token,
+      $expires_in,$scope,$old_refresh_token
     );
 
     $status        = 200;
@@ -473,16 +473,7 @@ sub _verify_access_token_and_scope {
 
 sub _revoke_access_token {
   my ( $c,$access_token ) = @_;
-
-  # need to revoke both the refresh token and the access token
-  delete( $ACCESS_TOKENS{ $ACCESS_TOKENS{$access_token}{refresh_token} } );
   delete( $ACCESS_TOKENS{$access_token} );
-}
-
-sub _revoke_refresh_token {
-  my ( $c,$refresh_token ) = @_;
-
-  delete( $REFRESH_TOKENS{$refresh_token} );
 }
 
 =head1 REQUIRED FUNCTIONS
@@ -491,11 +482,16 @@ These are the callbacks necessary to use the plugin in a more realistic way, and
 are required to make the auth code, access token, refresh token, etc available
 across several processes and persistent.
 
-The examples below use pseudocode for the code that would be bespoke to your
-application - such as finding access codes in the database, and so on. You can
-refer to the tests in t/ and examples in examples/ in this distribution for how
-it could be done, but really you should be storing the data in a scalable and
-persistent data store.
+The examples below use monogodb (a db helper returns a MongoDB::Database object)
+for the code that would be bespoke to your application - such as finding access
+codes in the database, and so on. You can refer to the tests in t/ and examples
+in examples/ in this distribution for how it could be done and to actually play
+around with the code both in a browser and on the command line.
+
+Also note that the examples below have no logging, you should probably make sure
+to $c->log->debug (or warn/error) when falling through to the various code paths
+to make debugging somewhat easier. The examples below don't have logging so the
+code is shorter/clearer
 
 =cut
 
@@ -566,16 +562,15 @@ client being disallowed:
   my $verify_client_sub = sub {
     my ( $c,$client_id,$scopes_ref ) = @_;
 
-    # get client info from the database
-    if ( $client = _load_client_data( $client_id ) ) {
-
+    if (
+      my $client = $c->db->get_collection( 'clients' )
+        ->find_one({ client_id => $client_id })
+    ) {
         foreach my $scope ( @{ $scopes_ref // [] } ) {
 
           if ( ! exists( $client->{scopes}{$scope} ) ) {
-            $c->app->log->debug( "Client lacks scope ($scope)" );
             return ( 0,'invalid_scope' );
           } elsif ( ! $client->{scopes}{$scope} ) {
-            $c->app->log->debug( "Client cannot scope ($scope)" );
             return ( 0,'access_denied' );
           }
         }
@@ -583,7 +578,6 @@ client being disallowed:
         return ( 1 );
     }
 
-    $c->app->log->debug( "Client ($client_id) does not exist" );
     return ( 0,'unauthorized_client' );
   };
 
@@ -625,19 +619,16 @@ the verify_auth_code callback for verification:
   my $store_auth_code_sub = sub {
     my ( $c,$auth_code,$client_id,$expires_at,$uri,@scopes ) = @_;
 
-    my $user_id = $c->session( 'user_id' );
+    my $auth_codes = $c->db->get_collection( 'auth_codes' );
 
-    my $auth_code_rs = $c->db->resultset( 'AuthCode' )->create({
-      client_id     => $client_id,
-      user_id       => $user_id,
-      auth_code     => $auth_code,
-      expires       => $expires_at,
-      redirect_uri  => $uri,
+    my $id = $auth_codes->insert({
+      auth_code    => $auth_code,
+      client_id    => $client_id,
+      user_id      => $c->session( 'user_id' ),
+      expires      => $expires_at,
+      redirect_uri => $uri,
+      scope        => { map { $_ => 1 } @scopes },
     });
-
-    foreach my $scope ( @scopes ) {
-      $auth_code_rs->create_related( 'auth_code_scope',$scope );
-    }
 
     return;
   };
@@ -653,8 +644,6 @@ sub _store_auth_code {
     redirect_uri  => $uri,
     scope         => { map { $_ => 1 } @scopes },
   };
-
-  $AUTH_CODES_BY_CLIENT{$client_id} = $auth_code;
 
   return 1;
 }
@@ -675,51 +664,48 @@ element should be the error message in the case of an invalid authorization
 code. The third element should be a hash reference of scopes as requested by the
 client in the original call for an authorization code:
 
-
   my $verify_auth_code_sub = sub {
     my ( $c,$client_id,$client_secret,$auth_code,$uri ) = @_;
 
-    my $auth_code = $c->db->resultset( 'AuthCode' )->search({
-      client_id    => $client_id,
-      auth_code    => $auth_code,
+    my $auth_codes      = $c->db->get_collection( 'auth_codes' );
+    my $ac              = $auth_codes->find_one({
+      client_id => $client_id,
+      auth_code => $auth_code,
     });
 
-    $auth_code || return ( 0,'unauthorized_client' );
+    my $client = $c->db->get_collection( 'clients' )
+      ->find_one({ client_id => $client_id });
 
-    return ( 0,'invalid_grant' )
-      if ( $auth_code->client->secret ne $client_secret );
+    $client || return ( 0,'unauthorized_client' );
 
     if (
-      $auth_code->verified
-      or $auth_code->revoked
-      or $auth_code->redirect_uri ne $uri
-      or $auth_code->expires <= time
+      ! $ac
+      or $ac->{verified}
+      or ( $uri ne $ac->{redirect_uri} )
+      or ( $ac->{expires} <= time )
+      or ( $client_secret ne $client->{client_secret} )
     ) {
 
-      if ( $auth_code->verified ) {
-        # the auth code has been used before, revoke auth code and access tokens
-        $auth_code->revoked( 1 );
-
-        foreach my $access_token( @{ $auth_code->access_token->all // [] } ) {
-          $access_token->revoked( 1 );
-          $access_token->update;
-        }
-
-        $auth_code->update;
+      if ( $ac->{verified} ) {
+        # the auth code has been used before - we must revoke the auth code
+        # and access tokens
+        $auth_codes->remove({ auth_code => $auth_code });
+        $c->db->get_collection( 'access_tokens' )->remove({
+          access_token => $ac->{access_token}
+        });
       }
 
       return ( 0,'invalid_grant' );
     }
 
-    $auth_code->verified( 1 );
-    $auth_code->update;
-
     # scopes are those that were requested in the authorization request, not
     # those stored in the client (i.e. what the auth request restriced scopes
     # to and not everything the client is capable of)
-    my %scopes = map { $_ => 1 } @{ $auth_code->scopes->all // [] };
+    my $scope = $ac->{scope};
 
-    return ( $client_id,undef,\%scopes );
+    $auth_codes->update( $ac,{ verified => 1 } );
+
+    return ( $client_id,undef,$scope );
   };
 
 =cut
@@ -771,13 +757,15 @@ sub _verify_auth_code {
 A callback to allow you to store the generated access and refresh tokens. The
 callback is passed the Mojolicious controller object, the client identifier as
 returned from the verify_auth_code callback, the authorization code, the access
-token, the refresh_token, the validity period in seconds, and the scope returned
-from the verify_auth_code callback.
+token, the refresh_token, the validity period in seconds, the scope returned
+from the verify_auth_code callback, and the old refresh token,
 
 Note that the passed authorization code could be undefined, in which case the
 access token and refresh tokens were requested by the Client by the use of an
-existing refresh token. In this case you should revoke the existing access and
-refresh tokens.
+existing refresh token, which will be passed as the old refresh token variable.
+In this case you should use the old refresh token to find out the previous
+access token and revoke the previous access and refresh tokens (this is *not* a
+hard requirement according to the OAuth spec, but i would recommend it).
 
 The callback does not need to return anything.
 
@@ -786,8 +774,67 @@ the verify_auth_code callback for verification:
 
   my $store_access_token_sub = sub {
     my (
-      $c,$client,$auth_code,$access_token,$refresh_token,$expires_in,$scope
+      $c,$client,$auth_code,$access_token,$refresh_token,
+      $expires_in,$scope,$old_refresh_token
     ) = @_;
+
+    my $access_tokens  = $c->db->get_collection( 'access_tokens' );
+    my $refresh_tokens = $c->db->get_collection( 'refresh_tokens' );
+
+    my $user_id;
+
+    if ( ! defined( $auth_code ) && $old_refresh_token ) {
+      # must have generated an access token via a refresh token so revoke the old
+      # access token and refresh token and update the oauth2_data->{auth_codes}
+      # hash to store the new one (also copy across scopes if missing)
+      my $prt = $c->db->get_collection( 'refresh_tokens' )->find_one({
+        refresh_token => $old_refresh_token,
+      });
+
+      my $pat = $c->db->get_collection( 'access_tokens' )->find_one({
+        access_token => $prt->{access_token},
+      });
+
+      # access tokens can be revoked, whilst refresh tokens can remain so we
+      # need to get the data from the refresh token as the access token may
+      # no longer exist at the point that the refresh token is used
+      $scope //= $prt->{scope};
+      $user_id = $prt->{user_id};
+
+      # need to revoke the access token
+      $c->db->get_collection( 'access_tokens' )
+        ->remove({ access_token => $pat->{access_token} });
+
+    } else {
+      $user_id = $c->db->get_collection( 'auth_codes' )->find_one({
+        auth_code => $auth_code,
+      })->{user_id};
+    }
+
+    if ( ref( $client ) ) {
+      $scope  = $client->{scope};
+      $client = $client->{client_id};
+    }
+
+    # if the client has en existing refresh token we need to revoke it
+    $refresh_tokens->remove({ client_id => $client, user_id => $user_id });
+
+    $access_tokens->insert({
+      access_token  => $access_token,
+      scope         => $scope,
+      expires       => time + $expires_in,
+      refresh_token => $refresh_token,
+      client_id     => $client,
+      user_id       => $user_id,
+    });
+
+    $refresh_tokens->insert({
+      refresh_token => $refresh_token,
+      access_token  => $access_token,
+      scope         => $scope,
+      client_id     => $client,
+      user_id       => $user_id,
+    });
 
     return;
   };
@@ -796,25 +843,29 @@ the verify_auth_code callback for verification:
 
 sub _store_access_token {
   my (
-    $c,$c_id,$auth_code,$access_token,$refresh_token,$expires_in,$scope
+    $c,$c_id,$auth_code,$access_token,$refresh_token,
+    $expires_in,$scope,$old_refresh_token
   ) = @_;
 
-  if ( ! defined( $auth_code ) ) {
+  if ( ! defined( $auth_code ) && $old_refresh_token ) {
     # must have generated an access token via a refresh token so revoke the old
     # access token and refresh token and update the AUTH_CODES hash to store the
     # new one (also copy across scopes if missing)
-    $auth_code = $AUTH_CODES_BY_CLIENT{$c_id};
+    $auth_code = $REFRESH_TOKENS{$old_refresh_token}{auth_code};
 
-    my $prev_access_token  = $AUTH_CODES{$auth_code}{access_token};
+    my $prev_access_token = $REFRESH_TOKENS{$old_refresh_token}{access_token};
 
-    if ( ! $ACCESS_TOKENS{$access_token}{scope} ) {
-      $ACCESS_TOKENS{$access_token}{scope}
-        = $ACCESS_TOKENS{$prev_access_token}{scope};
-    }
+    # access tokens can be revoked, whilst refresh tokens can remain so we
+    # need to get the data from the refresh token as the access token may
+    # no longer exist at the point that the refresh token is used
+    $scope //= $REFRESH_TOKENS{$old_refresh_token}{scope};
 
-    $c->app->log->debug( "OAuth2::Server: Revoking old access tokens (refresh)" );
+    $c->app->log->debug( "OAuth2::Server: Revoking old access token (refresh)" );
     _revoke_access_token( $c,$prev_access_token );
   }
+
+  delete( $REFRESH_TOKENS{$old_refresh_token} )
+    if $old_refresh_token;
 
   $ACCESS_TOKENS{$access_token} = {
     scope         => $scope,
@@ -826,15 +877,11 @@ sub _store_access_token {
   $REFRESH_TOKENS{$refresh_token} = {
     scope         => $scope,
     client_id     => $c_id,
+    access_token  => $access_token,
+    auth_code     => $auth_code,
   };
 
   $AUTH_CODES{$auth_code}{access_token} = $access_token;
-
-  if ( my $prev_refresh_token = $REFRESH_TOKENS_BY_CLIENT{$c_id} ) {
-    _revoke_refresh_token( $c,$prev_refresh_token );
-  }
-
-  $REFRESH_TOKENS_BY_CLIENT{$c_id} = $refresh_token;
 
   return $c_id;
 }
@@ -843,16 +890,62 @@ sub _store_access_token {
 
 Reference: L<http://tools.ietf.org/html/rfc6749#section-7>
 
-A callback to verify the acccess token. The callback is passed the Mojolicious
+A callback to verify the access token. The callback is passed the Mojolicious
 controller object, the access token, and an optional reference to a list of the
-scopes.
+scopes. Note that the access token could be the refresh token, as this method is
+also called when the Client uses the refresh token to get a new access token.
 
-The callback should verify the authorization code using the rules defined in
-the reference RFC above, and return either 1 for a valid access token or 0 for
-an invalid access token.
+The callback should verify the access code using the rules defined in the
+reference RFC above, and return false if the access token is not valid otherwise
+it should return something useful if the access token is valid - since this
+method is called by the call to $c->oauth you probably need to return a hash
+of details that the access token relates to (client id, user id, etc)
 
   my $verify_access_token_sub = sub {
     my ( $c,$access_token,$scopes_ref ) = @_;
+
+    if (
+      my $rt = $c->db->get_collection( 'refresh_tokens' )->find_one({
+        refresh_token => $access_token
+      })
+    ) {
+
+      if ( $scopes_ref ) {
+        foreach my $scope ( @{ $scopes_ref // [] } ) {
+          if ( ! exists( $rt->{scope}{$scope} ) or ! $rt->{scope}{$scope} ) {
+            return 0;
+          }
+        }
+      }
+
+      # $rt contains client_id, user_id, etc
+      return $rt;
+    }
+    elsif (
+      my $at = $c->db->get_collection( 'access_tokens' )->find_one({
+        access_token => $access_token,
+      })
+    ) {
+
+      if ( $at->{expires} <= time ) {
+        # need to revoke the access token
+        $c->db->get_collection( 'access_tokens' )
+          ->remove({ access_token => $access_token });
+
+        return 0;
+      } elsif ( $scopes_ref ) {
+
+        foreach my $scope ( @{ $scopes_ref // [] } ) {
+          if ( ! exists( $at->{scope}{$scope} ) or ! $at->{scope}{$scope} ) {
+            return 0;
+          }
+        }
+
+      }
+
+      # $at contains client_id, user_id, etc
+      return $at;
+    }
 
     return 0;
   };
@@ -907,6 +1000,29 @@ sub _verify_access_token {
 }
 
 1;
+
+=head1 PUTTING IT ALL TOGETHER
+
+Having defined the above callbacks, customized to your app/data store/etc, you
+can configuration the plugin:
+
+  $self->plugin(
+    'OAuth::Server' => {
+      login_resource_owner      => $resource_owner_logged_in_sub,
+      confirm_by_resource_owner => $resource_owner_confirm_scopes_sub,
+      verify_client             => $verify_client_sub,
+      store_auth_code           => $store_auth_code_sub,
+      verify_auth_code          => $verify_auth_code_sub,
+      store_access_token        => $store_access_token_sub,
+      verify_access_token       => $verify_access_token_sub,
+    }
+  );
+
+This will make the /oauth/authorize and /oauth/access_token routes available in
+your app, which will call the above functions in the correct order. The helper
+oauth also becomes available to call in various controllers, templates, etc:
+
+  $c->oauth( 'post_image' ) or return $c->render( status => 401 );
 
 =head1 REFERENCES
 

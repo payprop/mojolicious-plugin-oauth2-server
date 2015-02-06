@@ -8,3 +8,4 @@ Mojolicious-Plugin-OAuth2-Server*.gz
 blib
 cover_db
 pm_to_blib
+examples/data/

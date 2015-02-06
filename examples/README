@@ -52,6 +52,10 @@ examples/oauth2_server_realistic.pl - An Authorization Server and Resource Serve
                                      without losing know tokens - although will
                                      not scale, you should use a database really)
 
+examples/oauth2_server_db.pl       - As above but uses a db (you will need mongodb
+                                     and the perl MongoDB module to be able to use
+                                     this example)
+
 web browser / /usr/bin/curl        - A User Agent
 
 the command line                   - A Resource Owner (A person, You!)

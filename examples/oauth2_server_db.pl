@@ -5,33 +5,33 @@ use warnings;
 
 use Mojolicious::Lite;
 use Mojo::JSON qw/ decode_json encode_json /;
+use MongoDB;
 use FindBin qw/ $Bin /;
 
 chdir( $Bin );
 
-# N.B. this uses a little JSON file, which would not scale - in reality
-# you should be using a database of some sort
-my $storage_file = "oauth2_db.json";
+my $client = MongoDB::MongoClient->new(
+  host           => 'localhost',
+  port           => 27017,
+  auto_reconnect => 1,
+);
 
-sub save_oauth2_data {
-  my ( $config ) = @_;
-  my $json = encode_json( $config );
-  open( my $fh,'>',$storage_file )
-    || die "Couldn't open $storage_file for write: $!";
-  print $fh $json;
-  close( $fh );
-  return 1;
-}
+{
+  my $db = $client->get_database( 'oauth2' );
+  my $clients = $db->get_collection( 'clients' );
 
-sub load_oauth2_data {
-  open( my $fh,'<',$storage_file )
-    || die "Couldn't open $storage_file for read: $!";
-  my $json;
-  while ( my $line = <$fh> ) {
-    $json .= $line;
+  if ( ! $clients->find_one({ client_id => 'TrendyNewService' }) ) {
+    $clients->insert({
+      client_id     => "TrendyNewService",
+      client_secret => "boo",
+      scopes => {
+        post_images    => 1,
+        track_location => 1,
+        annoy_friends  => 1,
+        download_data  => 0,
+      }
+    });
   }
-  close( $fh );
-  return decode_json( $json );
 }
 
 app->config(
@@ -39,6 +39,11 @@ app->config(
     listen => [ 'https://*:3000' ]
   }
 );
+
+helper db => sub {
+  my $db = $client->get_database( 'oauth2' );
+  return $db;
+};
 
 my $resource_owner_logged_in_sub = sub {
   my ( $c ) = @_;
@@ -77,10 +82,10 @@ my $resource_owner_confirm_scopes_sub = sub {
 my $verify_client_sub = sub {
   my ( $c,$client_id,$scopes_ref ) = @_;
 
-  my $oauth2_data = load_oauth2_data();
-
-  if ( my $client = $oauth2_data->{clients}{$client_id} ) {
-
+  if (
+    my $client = $c->db->get_collection( 'clients' )
+      ->find_one({ client_id => $client_id })
+  ) {
       foreach my $scope ( @{ $scopes_ref // [] } ) {
 
         if ( ! exists( $client->{scopes}{$scope} ) ) {
@@ -102,21 +107,16 @@ my $verify_client_sub = sub {
 my $store_auth_code_sub = sub {
   my ( $c,$auth_code,$client_id,$expires_at,$uri,@scopes ) = @_;
 
-  my $oauth2_data = load_oauth2_data();
+  my $auth_codes = $c->db->get_collection( 'auth_codes' );
 
-  my $user_id = $c->session( 'user_id' );
-
-  $oauth2_data->{auth_codes}{$auth_code} = {
-    client_id     => $client_id,
-    user_id       => $user_id,
-    expires       => $expires_at,
-    redirect_uri  => $uri,
-    scope         => { map { $_ => 1 } @scopes },
-  };
-
-  $oauth2_data->{auth_codes_by_client}{$client_id} = $auth_code;
-
-  save_oauth2_data( $oauth2_data );
+  my $id = $auth_codes->insert({
+    auth_code    => $auth_code,
+    client_id    => $client_id,
+    user_id      => $c->session( 'user_id' ),
+    expires      => $expires_at,
+    redirect_uri => $uri,
+    scope        => { map { $_ => 1 } @scopes },
+  });
 
   return;
 };
@@ -124,29 +124,44 @@ my $store_auth_code_sub = sub {
 my $verify_auth_code_sub = sub {
   my ( $c,$client_id,$client_secret,$auth_code,$uri ) = @_;
 
-  my $oauth2_data = load_oauth2_data();
+  my $auth_codes      = $c->db->get_collection( 'auth_codes' );
+  my $ac              = $auth_codes->find_one({
+    client_id => $client_id,
+    auth_code => $auth_code,
+  });
 
-  my $client = $oauth2_data->{clients}{$client_id}
-    || return ( 0,'unauthorized_client' );
+  my $client = $c->db->get_collection( 'clients' )
+    ->find_one({ client_id => $client_id });
 
-  return ( 0,'invalid_grant' )
-    if ( $client_secret ne $client->{client_secret} );
+  $client || return ( 0,'unauthorized_client' );
 
   if (
-    ! exists( $oauth2_data->{auth_codes}{$auth_code} )
-    or ! exists( $oauth2_data->{clients}{$client_id} )
-    or ( $client_secret ne $oauth2_data->{clients}{$client_id}{client_secret} )
-    or $oauth2_data->{auth_codes}{$auth_code}{access_token}
-    or ( $uri && $oauth2_data->{auth_codes}{$auth_code}{redirect_uri} ne $uri )
-    or ( $oauth2_data->{auth_codes}{$auth_code}{expires} <= time )
+    ! $ac
+    or $ac->{verified}
+    or ( $uri ne $ac->{redirect_uri} )
+    or ( $ac->{expires} <= time )
+    or ( $client_secret ne $client->{client_secret} )
   ) {
+    $c->app->log->debug( "OAuth2::Server: Auth code does not exist" )
+      if ! $ac;
+    $c->app->log->debug( "OAuth2::Server: Client secret does not match" )
+      if ( $uri && $ac->{redirect_uri} ne $uri );
+    $c->app->log->debug( "OAuth2::Server: Auth code expired" )
+      if ( $ac->{expires} <= time );
+    $c->app->log->debug( "OAuth2::Server: Client secret does not match" )
+      if ( $client_secret ne $client->{client_secret} );
 
-    if ( $oauth2_data->{verified_auth_codes}{$auth_code} ) {
+    if ( $ac->{verified} ) {
       # the auth code has been used before - we must revoke the auth code
       # and access tokens
-      my $auth_code_data = delete( $oauth2_data->{auth_codes}{$auth_code} );
-      $oauth2_data = _revoke_access_token( $c,$auth_code_data->{access_token} );
-      save_oauth2_data( $oauth2_data );
+      $c->app->log->debug(
+        "OAuth2::Server: Auth code already used to get access token"
+      );
+
+      $auth_codes->remove({ auth_code => $auth_code });
+      $c->db->get_collection( 'access_tokens' )->remove({
+        access_token => $ac->{access_token}
+      });
     }
 
     return ( 0,'invalid_grant' );
@@ -155,11 +170,9 @@ my $verify_auth_code_sub = sub {
   # scopes are those that were requested in the authorization request, not
   # those stored in the client (i.e. what the auth request restriced scopes
   # to and not everything the client is capable of)
-  my $scope = $oauth2_data->{auth_codes}{$auth_code}{scope};
+  my $scope = $ac->{scope};
 
-  $oauth2_data->{verified_auth_codes}{$auth_code} = 1;
-
-  save_oauth2_data( $oauth2_data );
+  $auth_codes->update( $ac,{ verified => 1 } );
 
   return ( $client_id,undef,$scope );
 };
@@ -170,29 +183,36 @@ my $store_access_token_sub = sub {
     $expires_in,$scope,$old_refresh_token
   ) = @_;
 
-  my $oauth2_data = load_oauth2_data();
+  my $access_tokens  = $c->db->get_collection( 'access_tokens' );
+  my $refresh_tokens = $c->db->get_collection( 'refresh_tokens' );
+
   my $user_id;
 
   if ( ! defined( $auth_code ) && $old_refresh_token ) {
     # must have generated an access token via a refresh token so revoke the old
     # access token and refresh token and update the oauth2_data->{auth_codes}
     # hash to store the new one (also copy across scopes if missing)
-    $auth_code = $oauth2_data->{refresh_tokens}{$old_refresh_token}{auth_code};
+    my $prt = $c->db->get_collection( 'refresh_tokens' )->find_one({
+      refresh_token => $old_refresh_token,
+    });
 
-    my $prev_access_token
-      = $oauth2_data->{refresh_tokens}{$old_refresh_token}{access_token};
+    my $pat = $c->db->get_collection( 'access_tokens' )->find_one({
+      access_token => $prt->{access_token},
+    });
 
     # access tokens can be revoked, whilst refresh tokens can remain so we
     # need to get the data from the refresh token as the access token may
     # no longer exist at the point that the refresh token is used
-    $scope //= $oauth2_data->{refresh_tokens}{$old_refresh_token}{scope};
-    $user_id = $oauth2_data->{refresh_tokens}{$old_refresh_token}{user_id};
+    $scope //= $prt->{scope};
+    $user_id = $prt->{user_id};
 
     $c->app->log->debug( "OAuth2::Server: Revoking old access tokens (refresh)" );
-    $oauth2_data = _revoke_access_token( $c,$prev_access_token );
+    _revoke_access_token( $c,$pat->{access_token} );
 
   } else {
-    $user_id = $oauth2_data->{auth_codes}{$auth_code}{user_id};
+    $user_id = $c->db->get_collection( 'auth_codes' )->find_one({
+      auth_code => $auth_code,
+    })->{user_id};
   }
 
   if ( ref( $client ) ) {
@@ -201,68 +221,67 @@ my $store_access_token_sub = sub {
   }
 
   # if the client has en existing refresh token we need to revoke it
-  delete( $oauth2_data->{refresh_tokens}{$old_refresh_token} )
-    if $old_refresh_token;
+  $refresh_tokens->remove({ client_id => $client, user_id => $user_id });
 
-  $oauth2_data->{access_tokens}{$access_token} = {
+  $access_tokens->insert({
+    access_token  => $access_token,
     scope         => $scope,
     expires       => time + $expires_in,
     refresh_token => $refresh_token,
     client_id     => $client,
     user_id       => $user_id,
-  };
+  });
 
-  $oauth2_data->{refresh_tokens}{$refresh_token} = {
+  $refresh_tokens->insert({
+    refresh_token => $refresh_token,
+    access_token  => $access_token,
     scope         => $scope,
     client_id     => $client,
     user_id       => $user_id,
-    auth_code     => $auth_code,
-    access_token  => $access_token,
-  };
+  });
 
-  $oauth2_data->{auth_codes}{$auth_code}{access_token} = $access_token;
-
-  $oauth2_data->{refresh_tokens_by_client}{$client} = $refresh_token;
-
-  save_oauth2_data( $oauth2_data );
   return;
 };
 
 my $verify_access_token_sub = sub {
   my ( $c,$access_token,$scopes_ref ) = @_;
 
-  my $oauth2_data = load_oauth2_data();
-
-  if ( exists( $oauth2_data->{refresh_tokens}{$access_token} ) ) {
+  if (
+    my $rt = $c->db->get_collection( 'refresh_tokens' )->find_one({
+      refresh_token => $access_token
+    })
+  ) {
 
     if ( $scopes_ref ) {
       foreach my $scope ( @{ $scopes_ref // [] } ) {
-        if (
-          ! exists( $oauth2_data->{refresh_tokens}{$access_token}{scope}{$scope} )
-          or ! $oauth2_data->{refresh_tokens}{$access_token}{scope}{$scope}
-        ) {
-          $c->app->log->debug( "OAuth2::Server: Refresh token does not have scope ($scope)" );
+        if ( ! exists( $rt->{scope}{$scope} ) or ! $rt->{scope}{$scope} ) {
+          $c->app->log->debug(
+            "OAuth2::Server: Refresh token does not have scope ($scope)"
+          );
           return 0;
         }
       }
     }
 
-    return $oauth2_data->{refresh_tokens}{$access_token};
+    return $rt;
   }
-  if ( exists( $oauth2_data->{access_tokens}{$access_token} ) ) {
+  elsif (
+    my $at = $c->db->get_collection( 'access_tokens' )->find_one({
+      access_token => $access_token,
+    })
+  ) {
 
-    if ( $oauth2_data->{access_tokens}{$access_token}{expires} <= time ) {
+    if ( $at->{expires} <= time ) {
       $c->app->log->debug( "OAuth2::Server: Access token has expired" );
-      $oauth2_data = _revoke_access_token( $c,$access_token );
+      _revoke_access_token( $c,$access_token );
       return 0;
     } elsif ( $scopes_ref ) {
 
       foreach my $scope ( @{ $scopes_ref // [] } ) {
-        if (
-          ! exists( $oauth2_data->{access_tokens}{$access_token}{scope}{$scope} )
-          or ! $oauth2_data->{access_tokens}{$access_token}{scope}{$scope}
-        ) {
-          $c->app->log->debug( "OAuth2::Server: Access token does not have scope ($scope)" );
+        if ( ! exists( $at->{scope}{$scope} ) or ! $at->{scope}{$scope} ) {
+          $c->app->log->debug(
+            "OAuth2::Server: Access token does not have scope ($scope)"
+          );
           return 0;
         }
       }
@@ -270,7 +289,7 @@ my $verify_access_token_sub = sub {
     }
 
     $c->app->log->debug( "OAuth2::Server: Access token is valid" );
-    return $oauth2_data->{access_tokens}{$access_token};
+    return $at;
   }
 
   $c->app->log->debug( "OAuth2::Server: Access token does not exist" );
@@ -280,12 +299,9 @@ my $verify_access_token_sub = sub {
 sub _revoke_access_token {
   my ( $c,$access_token ) = @_;
 
-  my $oauth2_data = load_oauth2_data();
-
-  delete( $oauth2_data->{access_tokens}{$access_token} );
-
-  save_oauth2_data( $oauth2_data );
-  return $oauth2_data;
+  $c->db->get_collection( 'access_tokens' )->remove({
+    access_token => $access_token,  
+  });
 }
 
 plugin 'OAuth2::Server' => {

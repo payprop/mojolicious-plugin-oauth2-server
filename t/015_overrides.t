@@ -66,7 +66,8 @@ my $VALID_REFRESH_TOKEN;
 
 my $store_access_token_sub = sub {
   my (
-    $c,$client_id,$auth_code,$access_token,$refresh_token,$expires_in,$scope
+    $c,$client_id,$auth_code,$access_token,$refresh_token,
+    $expires_in,$scope,$old_refresh_token
   ) = @_;
 
   $VALID_ACCESS_TOKEN  = $access_token;
