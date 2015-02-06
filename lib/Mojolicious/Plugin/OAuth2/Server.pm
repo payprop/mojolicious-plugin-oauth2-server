@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.01
+0.02
 
 =head1 SYNOPSIS
 

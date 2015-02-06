@@ -3,7 +3,8 @@
 MANIFEST.*
 MYMETA.json
 MYMETA.yml
-Makefile*
+Makefile
+Makefile.old
 Mojolicious-Plugin-OAuth2-Server*.gz
 blib
 cover_db

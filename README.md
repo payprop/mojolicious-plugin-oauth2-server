@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 # VERSION
 
-0.01
+0.02
 
 # SYNOPSIS
 
