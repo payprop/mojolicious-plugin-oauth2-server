@@ -27,7 +27,7 @@ shared between processes and will be lost on a restart.
 
 To use this plugin in a more realistic way you need to at a minimum implement
 the following functions and pass them to the plugin:
-  
+
   login_resource_owner
   confirm_by_resource_owner
   verify_client
