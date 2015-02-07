@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.04
+0.05
 
 =head1 SYNOPSIS
 
@@ -188,6 +188,7 @@ A callback to verify an access token. See L<REQUIRED FUNCTIONS>.
 =cut
 
 use strict;
+use warnings;
 use base qw/ Mojolicious::Plugin /;
 
 use Mojo::URL;
@@ -195,7 +196,7 @@ use Time::HiRes qw/ gettimeofday /;
 use MIME::Base64 qw/ encode_base64 decode_base64 /;
 use Carp qw/croak/;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 my %CLIENTS;
 my %AUTH_CODES;
@@ -383,7 +384,7 @@ sub _access_token_request {
 
   if ( $client ) {
 
-    $self->app->log->debug( "OAuth2::Server: Generating access token for $client_id" );
+    $self->app->log->debug( "OAuth2::Server: Generating access token for $client" );
 
     my ( $access_token,$refresh_token,$expires_in )
       = _generate_access_token( $config->{access_token_ttl} );
@@ -457,14 +458,18 @@ sub _verify_access_token_and_scope {
   my $access_token;
 
   if ( ! $refresh_token ) {
-    my $auth_header = $c->req->headers->header( 'Authorization' );
-    my ( $auth_type,$auth_access_token ) = split( / /,$auth_header );
+    if ( my $auth_header = $c->req->headers->header( 'Authorization' ) ) {
+      my ( $auth_type,$auth_access_token ) = split( / /,$auth_header );
 
-    if ( $auth_type ne 'Bearer' ) {
-      $c->app->log->debug( "OAuth2::Server: Auth type is not 'Bearer'" );
-      return 0;
+      if ( $auth_type ne 'Bearer' ) {
+        $c->app->log->debug( "OAuth2::Server: Auth type is not 'Bearer'" );
+        return 0;
+      } else {
+        $access_token = $auth_access_token;
+      }
     } else {
-      $access_token = $auth_access_token;
+      $c->app->log->debug( "OAuth2::Server: Authorization header missing" );
+      return 0;
     }
   } else {
     $access_token = $refresh_token;
@@ -741,11 +746,18 @@ sub _verify_auth_code {
     $c->app->log->debug( "OAuth2::Server: Client ($client_id) does not exist" )
       if ! exists( $CLIENTS{$client_id} );
     $c->app->log->debug( "OAuth2::Server: Client secret does not match" )
-      if ( $client_secret ne $CLIENTS{$client_id}{client_secret} );
-    $c->app->log->debug( "OAuth2::Server: Redirect URI does not match" )
-      if ( $uri && $AUTH_CODES{$auth_code}{redirect_uri} ne $uri );
-    $c->app->log->debug( "OAuth2::Server: Auth code expired" )
-      if ( $AUTH_CODES{$auth_code}{expires} <= time );
+      if (
+        ! $client_secret
+        or ! $CLIENTS{$client_id}
+        or $client_secret ne $CLIENTS{$client_id}{client_secret}
+      );
+
+    if ( $AUTH_CODES{$auth_code} ) {
+      $c->app->log->debug( "OAuth2::Server: Redirect URI does not match" )
+        if ( $uri && $AUTH_CODES{$auth_code}{redirect_uri} ne $uri );
+      $c->app->log->debug( "OAuth2::Server: Auth code expired" )
+        if ( $AUTH_CODES{$auth_code}{expires} <= time );
+    }
 
     if ( my $access_token = $AUTH_CODES{$auth_code}{access_token} ) {
       # this auth code has already been used to generate an access token
