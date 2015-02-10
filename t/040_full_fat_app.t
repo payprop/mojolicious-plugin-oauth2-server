@@ -17,13 +17,13 @@ sub startup {
         my ( $c ) = @_;
         my $uri = join( '?',$c->url_for('current'),$c->url_with->query );
         $c->flash( 'redirect_after_login' => $uri );
-        $c->redirect_to( '/login' );
+        $c->redirect_to( '/oauth/login' );
         return 0;
       },
     }
   );
 
-  $self->routes->any('/login')
+  $self->routes->any('/oauth/login')
     ->to('Public#login');
 }
 
@@ -50,9 +50,9 @@ my $t = Test::Mojo->new( 'FullFatOAuth' );
 $t->ua->max_redirects( 2 );
 
 note( "flash in plugin accesible to controller" );
-$t->get_ok( '/oauth/authorize?client_id=1&response_type=code' )
+$t->get_ok( '/oauth/authorize?client_id=1&response_type=code&redirect_uri=foo' )
   ->status_is( 200 )
-  ->content_is( 'login: /oauth/authorize?client_id=1&response_type=code' )
+  ->content_is( 'login: /oauth/authorize?client_id=1&response_type=code&redirect_uri=foo' )
 ;
 
 done_testing();

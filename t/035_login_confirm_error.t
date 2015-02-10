@@ -24,7 +24,7 @@ MOJO_APP: {
     login_resource_owner      => sub {
       my ( $c ) = @_;
       if ( ! $LOGGED_IN++ ) {
-        $c->redirect_to( '/login' );
+        $c->redirect_to( '/oauth/login' );
         return;
       } else {
         return $LOGGED_IN;
@@ -33,7 +33,7 @@ MOJO_APP: {
     confirm_by_resource_owner => sub {
       my ( $c,$scopes_ref ) = @_;
       if ( ! defined $CONFIRMED_SCOPES ) {
-        $c->redirect_to( '/confirm_scopes' );
+        $c->redirect_to( '/oauth/confirm_scopes' );
         # access is not required to be set by resource owner
         $CONFIRMED_SCOPES = 0;
         return;
@@ -52,8 +52,8 @@ MOJO_APP: {
     },
   };
 
-  get '/login'          => sub { return shift->render( text => "Login!" ) };
-  get '/confirm_scopes' => sub { return shift->render( text => "Allow?" ) };
+  get '/oauth/login'          => sub { return shift->render( text => "Login!" ) };
+  get '/oauth/confirm_scopes' => sub { return shift->render( text => "Allow?" ) };
   get '/cb'             => sub {
     my ( $c ) = @_;
     if ( my $error = $c->param( 'error' ) ) {

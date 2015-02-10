@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 # VERSION
 
-0.05
+0.06
 
 # SYNOPSIS
 
@@ -236,7 +236,7 @@ and return 0:
         # login (with the original params)
         my $uri = join( '?',$c->url_for('current'),$c->url_with->query );
         $c->flash( 'redirect_after_login' => $uri );
-        $c->redirect_to( '/login' );
+        $c->redirect_to( '/oauth/login' );
         return 0;
       }
 
@@ -244,7 +244,13 @@ and return 0:
     };
 
 Note that you need to pass on the current url (with query) so it can be returned
-to after the user has logged in.
+to after the user has logged in. You can see that the flash is in use here - be
+aware that the default routes (if you don't pass them in the plugin config) for
+authorize and access\_token are under /oauth/ so it is possible that the flash may
+have a Path of /oauth/ - the consequence of this is that if your login route is
+under a different path (likely) you will not be able to access the value you set in
+the flash. The solution to this? Simply create another route under /oauth/ (so in
+this case /oauth/login) that points to the same route as the /login route
 
 ## confirm\_by\_resource\_owner
 
@@ -270,7 +276,7 @@ it should call the redirect\_to method on the controller and return undef:
         # confirm/deny by resource owner (with the original params)
         my $uri = join( '?',$c->url_for('current'),$c->url_with->query );
         $c->flash( 'redirect_after_login' => $uri );
-        $c->redirect_to( '/confirm_scopes' );
+        $c->redirect_to( '/oauth/confirm_scopes' );
       }
 
       return $is_allowed;
@@ -279,7 +285,8 @@ it should call the redirect\_to method on the controller and return undef:
 Note that you need to pass on the current url (with query) so it can be returned
 to after the user has confirmed/denied access, and the confirm/deny result is
 stored in the flash (this could be stored in the user session if you do not want
-the user to confirm/deny every single time the Client requests access).
+the user to confirm/deny every single time the Client requests access). Also note
+the caveat regarding flash and Path as documented above ([login\_resource\_owner](https://metacpan.org/pod/login_resource_owner))
 
 ## verify\_client
 

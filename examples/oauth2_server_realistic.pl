@@ -48,7 +48,7 @@ my $resource_owner_logged_in_sub = sub {
     # login (with the original params)
     my $uri = join( '?',$c->url_for('current'),$c->url_with->query );
     $c->flash( 'redirect_after_login' => $uri );
-    $c->redirect_to( '/login' );
+    $c->redirect_to( '/oauth/login' );
     return 0;
   }
 
@@ -68,7 +68,7 @@ my $resource_owner_confirm_scopes_sub = sub {
 
     my $uri = join( '?',$c->url_for('current'),$c->url_with->query );
     $c->flash( 'redirect_after_login' => $uri );
-    $c->redirect_to( '/confirm_scopes' );
+    $c->redirect_to( '/oauth/confirm_scopes' );
   }
 
   return $is_allowed;
@@ -338,7 +338,7 @@ get '/' => sub {
   $c->render( text => "Welcome to Overly Attached Social Network" );
 };
 
-get '/login' => sub {
+get '/oauth/login' => sub {
   my ( $c ) = @_;
 
   if ( my $redirect_uri = $c->flash( 'redirect_after_login' ) ) {
@@ -358,7 +358,7 @@ any '/logout' => sub {
   $c->redirect_to( '/' );
 };
 
-post '/login' => sub {
+post '/oauth/login' => sub {
   my ( $c ) = @_;
 
   my $username = $c->param('username');
@@ -384,7 +384,7 @@ post '/login' => sub {
   }
 };
 
-any '/confirm_scopes' => sub {
+any '/oauth/confirm_scopes' => sub {
   my ( $c ) = @_;
 
   # in theory we should only ever get here via a redirect from
@@ -430,7 +430,7 @@ __DATA__
   <body><h3>Welcome to Overly Attached Social Network</h3><%== content %></body>
 </html>
 
-@@ login.html.ep
+@@ oauthlogin.html.ep
 % layout 'default';
 % if ( $error ) {
 <b><%= $error %></b>
@@ -439,7 +439,7 @@ __DATA__
   username: Lee<br />
   password: P@55w0rd
 </p>
-%= form_for 'login' => (method => 'POST') => begin
+%= form_for '/oauth/login' => (method => 'POST') => begin
   %= label_for username => 'Username'
   %= text_field 'username'
 
@@ -449,7 +449,7 @@ __DATA__
   %= submit_button 'Log me in', class => 'btn'
 % end
 
-@@ confirm_scopes.html.ep
+@@ oauthconfirm_scopes.html.ep
 % layout 'default';
 %= form_for 'confirm_scopes' => (method => 'POST') => begin
   <%= $client_id %> would like to be able to perform the following on your behalf:<ul>
