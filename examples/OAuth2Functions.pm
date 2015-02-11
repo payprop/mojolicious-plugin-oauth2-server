@@ -150,7 +150,7 @@ sub _verify_auth_code {
 		$c->app->log->debug( "Auth code does not exist" )
 			if ! $ac;
 		$c->app->log->debug( "Client secret does not match" )
-			if ( $uri && $ac->{redirect_uri} ne $uri );
+			if ( $uri && $ac->redirect_uri ne $uri );
 		$c->app->log->debug( "Auth code expired" )
 			if ( $ac->expires->epoch <= time );
 		$c->app->log->debug( "Client secret does not match" )
