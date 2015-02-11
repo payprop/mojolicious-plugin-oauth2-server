@@ -1,5 +1,14 @@
 Revision history for Mojolicious-Plugin-OAuth2-Server
 
+0.07     2015-02-11
+        - call verify_client before redirecting to login / confirm scopes
+          as there's no point logging a user in, etc, if the client is bad
+        - make _verify_access_token return a list as _verify_auth_code so
+          we can report the failure reason in a meaningful way.
+        - add example schema and code for using the module with a relational
+          database
+        - harden token generation function using Crypt::PRNG random_string
+
 0.06     2015-02-10
         - test and documentation for flash + redirect in a full fat app
 

@@ -16,6 +16,7 @@ WriteMakefile(
     'MIME::Base64' => 0,
     'Time::HiRes'  => 0,
     'Carp'         => 0,
+    'Crypt::PRNG'  => '0.021',
   },
   BUILD_REQUIRES => {
     'FindBin'         => 0,

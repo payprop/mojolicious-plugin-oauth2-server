@@ -12,7 +12,7 @@ sub startup {
 
   $self->plugin(
     'OAuth2::Server' => {
-      'clients'              => {},
+      'verify_client'        => sub { return ( 1 ) },
       'login_resource_owner' => sub {
         my ( $c ) = @_;
         my $uri = join( '?',$c->url_for('current'),$c->url_with->query );

@@ -20,3 +20,5 @@ examples/oauth2_db.json
 examples/oauth2_server_simple.pl
 examples/oauth2_server_realistic.pl
 examples/oauth2_server_db.pl
+examples/OAuth2Functions.pm
+examples/oauth2_schema.sql

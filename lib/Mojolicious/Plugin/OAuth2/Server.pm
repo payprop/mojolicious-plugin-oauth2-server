@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.06
+0.07
 
 =head1 SYNOPSIS
 
@@ -194,9 +194,10 @@ use base qw/ Mojolicious::Plugin /;
 use Mojo::URL;
 use Time::HiRes qw/ gettimeofday /;
 use MIME::Base64 qw/ encode_base64 decode_base64 /;
-use Carp qw/croak/;
+use Carp qw/ croak /;
+use Crypt::PRNG qw/ random_string /;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 my %CLIENTS;
 my %AUTH_CODES;
@@ -218,9 +219,9 @@ plugin in its simplest form.
 Checks if there is a valid Authorization: Bearer header with a valid access
 token and if the access token has the requisite scopes. The scopes are optional:
 
-    unless ( my $oauth_details = $c->oauth( @scopes ) ) {
-      return $c->render( status => 401, text => 'Unauthorized' );
-    }
+  unless ( my $oauth_details = $c->oauth( @scopes ) ) {
+    return $c->render( status => 401, text => 'Unauthorized' );
+  }
 
 =cut
 
@@ -256,7 +257,10 @@ sub register {
   );
 
   $app->helper(
-    oauth => sub { _verify_access_token_and_scope( $app,$config,0,@_ ) },
+    oauth => sub {
+      my @res = _verify_access_token_and_scope( $app,$config,0,@_ );
+      return $res[0];
+    },
   );
 }
 
@@ -292,25 +296,25 @@ sub _authorization_request {
   my $verify_client            = $config->{verify_client} // \&_verify_client;
 
   my $uri = Mojo::URL->new( $url );
-  my ( $res,$error );
+  my ( $res,$error ) = $verify_client->( $self,$c_id,\@scopes );
 
-  if ( ! $resource_owner_logged_in->( $self ) ) {
-    $self->app->log->debug( "OAuth2::Server: Resource owner not logged in" );
-    # call to $resource_owner_logged_in method should have called redirect_to
-    return;
-  } else {
-    $self->app->log->debug( "OAuth2::Server: Resource owner is logged in" );
-    $res = $resource_owner_confirms->( $self,$c_id,\@scopes );
-    if ( ! defined $res ) {
-      $self->app->log->debug( "OAuth2::Server: Resource owner to confirm scopes" );
-      # call to $resource_owner_confirms method should have called redirect_to
+  if ( $res ) {
+    if ( ! $resource_owner_logged_in->( $self ) ) {
+      $self->app->log->debug( "OAuth2::Server: Resource owner not logged in" );
+      # call to $resource_owner_logged_in method should have called redirect_to
       return;
-    }
-    elsif ( $res == 0 ) {
-      $self->app->log->debug( "OAuth2::Server: Resource owner denied scopes" );
-      $error = 'access_denied';
     } else {
-      ( $res,$error ) = $verify_client->( $self,$c_id,\@scopes );
+      $self->app->log->debug( "OAuth2::Server: Resource owner is logged in" );
+      $res = $resource_owner_confirms->( $self,$c_id,\@scopes );
+      if ( ! defined $res ) {
+        $self->app->log->debug( "OAuth2::Server: Resource owner to confirm scopes" );
+        # call to $resource_owner_confirms method should have called redirect_to
+        return;
+      }
+      elsif ( $res == 0 ) {
+        $self->app->log->debug( "OAuth2::Server: Resource owner denied scopes" );
+        $error = 'access_denied';
+      }
     }
   }
 
@@ -373,7 +377,9 @@ sub _access_token_request {
   my ( $client,$error,$scope,$old_refresh_token );
 
   if ( $grant_type eq 'refresh_token' ) {
-    $client = _verify_access_token_and_scope( $app,$config,$refresh_token,$self );
+    ( $client,$error,$scope ) = _verify_access_token_and_scope(
+      $app,$config,$refresh_token,$self
+    );
     $old_refresh_token = $refresh_token;
   } else {
     my $verify_auth_code_sub = $config->{verify_auth_code} // \&_verify_auth_code;
@@ -431,7 +437,7 @@ sub _generate_authorization_code {
   my ( $sec,$usec ) = gettimeofday;
 
   return (
-    encode_base64( join( '-',$sec,$usec,rand() ),'' ),
+    encode_base64( join( '-',$sec,$usec,rand(),random_string(30) ),'' ),
     $ttl
   );
 }
@@ -463,13 +469,13 @@ sub _verify_access_token_and_scope {
 
       if ( $auth_type ne 'Bearer' ) {
         $c->app->log->debug( "OAuth2::Server: Auth type is not 'Bearer'" );
-        return 0;
+        return ( 0,'invalid_request' );
       } else {
         $access_token = $auth_access_token;
       }
     } else {
       $c->app->log->debug( "OAuth2::Server: Authorization header missing" );
-      return 0;
+      return ( 0,'invalid_request' );
     }
   } else {
     $access_token = $refresh_token;
@@ -929,7 +935,11 @@ The callback should verify the access code using the rules defined in the
 reference RFC above, and return false if the access token is not valid otherwise
 it should return something useful if the access token is valid - since this
 method is called by the call to $c->oauth you probably need to return a hash
-of details that the access token relates to (client id, user id, etc)
+of details that the access token relates to (client id, user id, etc).
+
+In the event of an invalid, expired, etc, access or refresh token you should
+return a list where the first element is 0 and the second contains the error
+message (almost certainly 'invalid_grant' in this case)
 
   my $verify_access_token_sub = sub {
     my ( $c,$access_token,$scopes_ref ) = @_;
@@ -943,7 +953,7 @@ of details that the access token relates to (client id, user id, etc)
       if ( $scopes_ref ) {
         foreach my $scope ( @{ $scopes_ref // [] } ) {
           if ( ! exists( $rt->{scope}{$scope} ) or ! $rt->{scope}{$scope} ) {
-            return 0;
+            return ( 0,'invalid_grant' )
           }
         }
       }
@@ -962,12 +972,12 @@ of details that the access token relates to (client id, user id, etc)
         $c->db->get_collection( 'access_tokens' )
           ->remove({ access_token => $access_token });
 
-        return 0;
+        return ( 0,'invalid_grant' )
       } elsif ( $scopes_ref ) {
 
         foreach my $scope ( @{ $scopes_ref // [] } ) {
           if ( ! exists( $at->{scope}{$scope} ) or ! $at->{scope}{$scope} ) {
-            return 0;
+            return ( 0,'invalid_grant' )
           }
         }
 
@@ -977,7 +987,7 @@ of details that the access token relates to (client id, user id, etc)
       return $at;
     }
 
-    return 0;
+    return ( 0,'invalid_grant' )
   };
 
 =cut
@@ -994,7 +1004,7 @@ sub _verify_access_token {
           or ! $REFRESH_TOKENS{$access_token}{scope}{$scope}
         ) {
           $c->app->log->debug( "OAuth2::Server: Refresh token does not have scope ($scope)" );
-          return 0;
+          return ( 0,'invalid_grant' )
         }
       }
     }
@@ -1006,7 +1016,7 @@ sub _verify_access_token {
     if ( $ACCESS_TOKENS{$access_token}{expires} <= time ) {
       $c->app->log->debug( "OAuth2::Server: Access token has expired" );
       _revoke_access_token( $c,$access_token );
-      return 0;
+      return ( 0,'invalid_grant' )
     } elsif ( $scopes_ref ) {
 
       foreach my $scope ( @{ $scopes_ref // [] } ) {
@@ -1015,7 +1025,7 @@ sub _verify_access_token {
           or ! $ACCESS_TOKENS{$access_token}{scope}{$scope}
         ) {
           $c->app->log->debug( "OAuth2::Server: Access token does not have scope ($scope)" );
-          return 0;
+          return ( 0,'invalid_grant' )
         }
       }
 
@@ -1026,7 +1036,7 @@ sub _verify_access_token {
   }
 
   $c->app->log->debug( "OAuth2::Server: Access token does not exist" );
-  return 0;
+  return ( 0,'invalid_grant' )
 }
 
 1;
@@ -1053,6 +1063,31 @@ your app, which will call the above functions in the correct order. The helper
 oauth also becomes available to call in various controllers, templates, etc:
 
   $c->oauth( 'post_image' ) or return $c->render( status => 401 );
+
+=head1 CLIENT SECRET AND TOKEN SECURITY
+
+The auth codes and access tokens generated by the plugin should be unique. They
+use a combination of the generation time (to microsecond precision) + rand() +
+a call to Crypt::PRNG's random_string function. These are then base64 encoded to
+make sure there are no problems with URL encoding.
+
+Since a call for an access token requires both the authorization code and the
+client secret you don't need to worry too much about protecting the authorization
+code - however you obviously need to make sure the client secret and resultant
+access tokens and refresh tokens are stored securely. Since if any of these are
+compromised you will have your app endpoints open to use by who or whatever has
+stolen them.
+
+You should therefore treat the client secret, access token, and refresh token as
+you would treat passwords - so hashed, salted, and probably encrypted. As with
+the various checking functions required by the module, the securing of this data
+is left to you. More information:
+
+L<https://stackoverflow.com/questions/1626575/best-practices-around-generating-oauth-tokens>
+
+L<https://stackoverflow.com/questions/1878830/securly-storing-openid-identifiers-and-oauth-tokens>
+
+L<https://stackoverflow.com/questions/4419915/how-to-keep-the-oauth-consumer-secret-safe-and-how-to-react-when-its-compromis>
 
 =head1 REFERENCES
 

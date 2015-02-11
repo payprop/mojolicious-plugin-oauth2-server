@@ -242,7 +242,7 @@ my $verify_access_token_sub = sub {
           or ! $oauth2_data->{refresh_tokens}{$access_token}{scope}{$scope}
         ) {
           $c->app->log->debug( "OAuth2::Server: Refresh token does not have scope ($scope)" );
-          return 0;
+          return ( 0,'invalid_grant' );
         }
       }
     }
@@ -254,7 +254,7 @@ my $verify_access_token_sub = sub {
     if ( $oauth2_data->{access_tokens}{$access_token}{expires} <= time ) {
       $c->app->log->debug( "OAuth2::Server: Access token has expired" );
       $oauth2_data = _revoke_access_token( $c,$access_token );
-      return 0;
+      return ( 0,'invalid_grant' );
     } elsif ( $scopes_ref ) {
 
       foreach my $scope ( @{ $scopes_ref // [] } ) {
@@ -263,7 +263,7 @@ my $verify_access_token_sub = sub {
           or ! $oauth2_data->{access_tokens}{$access_token}{scope}{$scope}
         ) {
           $c->app->log->debug( "OAuth2::Server: Access token does not have scope ($scope)" );
-          return 0;
+          return ( 0,'invalid_grant' );
         }
       }
 

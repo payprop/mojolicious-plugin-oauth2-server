@@ -56,6 +56,12 @@ examples/oauth2_server_db.pl       - As above but uses a db (you will need mongo
                                      and the perl MongoDB module to be able to use
                                      this example)
 
+examples/oauth2_schema.sql         - And example schema for storing auth codes,
+                                     access tokens, etc, in a relational database
+
+examples/OAuth2Functions.pm        - Functions that could be used with the above
+                                     schema
+
 web browser / /usr/bin/curl        - A User Agent
 
 the command line                   - A Resource Owner (A person, You!)

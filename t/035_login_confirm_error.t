@@ -15,12 +15,11 @@ use Test::Deep;
 
 my $CONFIRMED_SCOPES;
 my $LOGGED_IN = 0;
-my $void_sub = sub { return };
 
 MOJO_APP: {
   # plugin configuration
   plugin 'OAuth2::Server' => {
-    verify_client    => $void_sub,
+    verify_client             => sub { return ( 1 ) },
     login_resource_owner      => sub {
       my ( $c ) = @_;
       if ( ! $LOGGED_IN++ ) {
@@ -107,7 +106,7 @@ $t->ua->max_redirects( 1 );
 note( "logged in (already confirmed scopes)" );
 $t->get_ok( $auth_route => form => \%valid_auth_params )
   ->status_is( 200 )
-  ->content_is( 'server_error' )
+  ->content_is( 'Callback' )
 ;
 
 note( "none existing auth code" );
