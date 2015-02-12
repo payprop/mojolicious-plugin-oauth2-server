@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.07
+0.08
 
 =head1 SYNOPSIS
 
@@ -197,7 +197,7 @@ use MIME::Base64 qw/ encode_base64 decode_base64 /;
 use Carp qw/ croak /;
 use Crypt::PRNG qw/ random_string /;
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 my %CLIENTS;
 my %AUTH_CODES;
