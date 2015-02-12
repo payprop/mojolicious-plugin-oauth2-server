@@ -145,7 +145,7 @@ sub _verify_auth_code {
 		or $ac->verified
 		or ( $uri ne $ac->redirect_uri )
 		or ( $ac->expires->epoch <= time )
-		or ! check_password( $client_secret,$client->secret )
+		or ! _check_password( $client_secret,$client->secret )
 	) {
 		$c->app->log->debug( "Auth code does not exist" )
 			if ! $ac;
@@ -154,7 +154,7 @@ sub _verify_auth_code {
 		$c->app->log->debug( "Auth code expired" )
 			if ( $ac->expires->epoch <= time );
 		$c->app->log->debug( "Client secret does not match" )
-			if ! check_password( $client_secret,$client->secret );
+			if ! _check_password( $client_secret,$client->secret );
 
 		if ( $ac->verified ) {
 			# the auth code has been used before - we must revoke the auth code
@@ -188,6 +188,12 @@ sub _verify_auth_code {
 		$ac->oauth2_auth_code_scopes->all;
 
 	return ( $client_id,undef,{ %scope } );
+}
+
+sub _check_password {
+  my ( $hashed_password,$password ) = @_;
+
+  die "Implement _check_password";
 }
 
 sub _store_access_token {
