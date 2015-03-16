@@ -1,5 +1,10 @@
 Revision history for Mojolicious-Plugin-OAuth2-Server
 
+0.09     2015-03-16
+        - fix refresh_token check to prevent it being used as an access token.
+          this adds an extra argument ($is_refresh_token) to the method that
+          is called to _verify_access_token
+
 0.08     2015-02-12
         - stipulate CryptX in the Makefile.PL rather than Crypt::PRNG, as the
           latter doesn't have a VERSION number so causes dependency check to

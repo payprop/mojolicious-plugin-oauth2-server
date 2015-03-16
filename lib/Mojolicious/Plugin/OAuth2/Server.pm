@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.08
+0.09
 
 =head1 SYNOPSIS
 
@@ -197,7 +197,7 @@ use MIME::Base64 qw/ encode_base64 decode_base64 /;
 use Carp qw/ croak /;
 use Crypt::PRNG qw/ random_string /;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 my %CLIENTS;
 my %AUTH_CODES;
@@ -481,7 +481,7 @@ sub _verify_access_token_and_scope {
     $access_token = $refresh_token;
   }
   
-  return $verify_access_token_sub->( $c,$access_token,\@scopes );
+  return $verify_access_token_sub->( $c,$access_token,\@scopes,$refresh_token );
 }
 
 sub _revoke_access_token {
@@ -927,9 +927,11 @@ sub _store_access_token {
 Reference: L<http://tools.ietf.org/html/rfc6749#section-7>
 
 A callback to verify the access token. The callback is passed the Mojolicious
-controller object, the access token, and an optional reference to a list of the
-scopes. Note that the access token could be the refresh token, as this method is
-also called when the Client uses the refresh token to get a new access token.
+controller object, the access token, an optional reference to a list of the
+scopes and if the access_token is actually a refresh token. Note that the access
+token could be the refresh token, as this method is also called when the Client
+uses the refresh token to get a new access token (in which case the value of the
+$is_refresh_token variable will be true).
 
 The callback should verify the access code using the rules defined in the
 reference RFC above, and return false if the access token is not valid otherwise
@@ -942,13 +944,13 @@ return a list where the first element is 0 and the second contains the error
 message (almost certainly 'invalid_grant' in this case)
 
   my $verify_access_token_sub = sub {
-    my ( $c,$access_token,$scopes_ref ) = @_;
+    my ( $c,$access_token,$scopes_ref,$is_refresh_token ) = @_;
 
-    if (
-      my $rt = $c->db->get_collection( 'refresh_tokens' )->find_one({
-        refresh_token => $access_token
-      })
-    ) {
+    my $rt = $c->db->get_collection( 'refresh_tokens' )->find_one({
+      refresh_token => $access_token
+    });
+
+    if ( $is_refresh_token && $rt ) {
 
       if ( $scopes_ref ) {
         foreach my $scope ( @{ $scopes_ref // [] } ) {
@@ -993,9 +995,12 @@ message (almost certainly 'invalid_grant' in this case)
 =cut
 
 sub _verify_access_token {
-  my ( $c,$access_token,$scopes_ref ) = @_;
+  my ( $c,$access_token,$scopes_ref,$is_refresh_token ) = @_;
 
-  if ( exists( $REFRESH_TOKENS{$access_token} ) ) {
+  if (
+    $is_refresh_token
+    && exists( $REFRESH_TOKENS{$access_token} )
+  ) {
 
     if ( $scopes_ref ) {
       foreach my $scope ( @{ $scopes_ref // [] } ) {

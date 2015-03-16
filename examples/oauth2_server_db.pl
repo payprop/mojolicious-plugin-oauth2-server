@@ -243,13 +243,13 @@ my $store_access_token_sub = sub {
 };
 
 my $verify_access_token_sub = sub {
-  my ( $c,$access_token,$scopes_ref ) = @_;
+  my ( $c,$access_token,$scopes_ref,$is_refresh_token ) = @_;
 
-  if (
-    my $rt = $c->db->get_collection( 'refresh_tokens' )->find_one({
-      refresh_token => $access_token
-    })
-  ) {
+  my $rt = $c->db->get_collection( 'refresh_tokens' )->find_one({
+    refresh_token => $access_token
+  });
+
+  if ( $is_refresh_token && $rt ) {
 
     if ( $scopes_ref ) {
       foreach my $scope ( @{ $scopes_ref // [] } ) {

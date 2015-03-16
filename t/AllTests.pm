@@ -150,6 +150,16 @@ sub run {
   $t->get_ok('/api/eat')->status_is( 200 );
   $t->get_ok('/api/sleep')->status_is( 401 );
 
+  note( "refresh token cannot access routes" );
+
+  $t->ua->on(start => sub {
+    my ( $ua,$tx ) = @_;
+    $tx->req->headers->header( 'Authorization' => "Bearer $refresh_token" );
+  });
+
+  $t->get_ok('/api/eat')->status_is( 401 );
+  $t->get_ok('/api/sleep')->status_is( 401 );
+
   note( "get a new access token using refresh token" );
 
   my %valid_refresh_token_params = (

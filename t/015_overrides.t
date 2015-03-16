@@ -78,11 +78,11 @@ my $store_access_token_sub = sub {
 };
 
 my $verify_access_token_sub = sub {
-  my ( $c,$access_token,$scopes_ref ) = @_;
+  my ( $c,$access_token,$scopes_ref,$is_refresh_token ) = @_;
 
   # and here we should check the access code is valid, not expired, and the
   # passed scopes are allowed for the access token
-  return 1 if $access_token eq $VALID_REFRESH_TOKEN;
+  return 1 if $is_refresh_token and $access_token eq $VALID_REFRESH_TOKEN;
   return 0 if $ACCESS_REVOKED;
   return 0 if grep { $_ eq 'sleep' } @{ $scopes_ref // [] };
 

@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 # VERSION
 
-0.08
+0.09
 
 # SYNOPSIS
 
@@ -502,9 +502,11 @@ the verify\_access\_token callback for verification:
 Reference: [http://tools.ietf.org/html/rfc6749#section-7](http://tools.ietf.org/html/rfc6749#section-7)
 
 A callback to verify the access token. The callback is passed the Mojolicious
-controller object, the access token, and an optional reference to a list of the
-scopes. Note that the access token could be the refresh token, as this method is
-also called when the Client uses the refresh token to get a new access token.
+controller object, the access token, an optional reference to a list of the
+scopes and if the access\_token is actually a refresh token. Note that the access
+token could be the refresh token, as this method is also called when the Client
+uses the refresh token to get a new access token (in which case the value of the
+$is\_refresh\_token variable will be true).
 
 The callback should verify the access code using the rules defined in the
 reference RFC above, and return false if the access token is not valid otherwise
@@ -517,13 +519,13 @@ return a list where the first element is 0 and the second contains the error
 message (almost certainly 'invalid\_grant' in this case)
 
     my $verify_access_token_sub = sub {
-      my ( $c,$access_token,$scopes_ref ) = @_;
+      my ( $c,$access_token,$scopes_ref,$is_refresh_token ) = @_;
 
-      if (
-        my $rt = $c->db->get_collection( 'refresh_tokens' )->find_one({
-          refresh_token => $access_token
-        })
-      ) {
+      my $rt = $c->db->get_collection( 'refresh_tokens' )->find_one({
+        refresh_token => $access_token
+      });
+
+      if ( $is_refresh_token && $rt ) {
 
         if ( $scopes_ref ) {
           foreach my $scope ( @{ $scopes_ref // [] } ) {

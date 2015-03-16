@@ -229,11 +229,14 @@ my $store_access_token_sub = sub {
 };
 
 my $verify_access_token_sub = sub {
-  my ( $c,$access_token,$scopes_ref ) = @_;
+  my ( $c,$access_token,$scopes_ref,$is_refresh_token ) = @_;
 
   my $oauth2_data = load_oauth2_data();
 
-  if ( exists( $oauth2_data->{refresh_tokens}{$access_token} ) ) {
+  if (
+    $is_refresh_token
+	&& exists( $oauth2_data->{refresh_tokens}{$access_token} )
+  ) {
 
     if ( $scopes_ref ) {
       foreach my $scope ( @{ $scopes_ref // [] } ) {
