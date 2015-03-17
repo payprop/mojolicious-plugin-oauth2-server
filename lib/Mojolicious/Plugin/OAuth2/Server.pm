@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.09
+0.10
 
 =head1 SYNOPSIS
 
@@ -197,7 +197,7 @@ use MIME::Base64 qw/ encode_base64 decode_base64 /;
 use Carp qw/ croak /;
 use Crypt::PRNG qw/ random_string /;
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 my %CLIENTS;
 my %AUTH_CODES;
@@ -406,7 +406,7 @@ sub _access_token_request {
     $status        = 200;
     $json_response = {
       access_token  => $access_token,
-      token_type    => 'bearer',
+      token_type    => 'Bearer',
       expires_in    => $expires_in,
       refresh_token => $refresh_token,
     };

@@ -126,7 +126,7 @@ sub run {
     $t->tx->res->json,
     {
       access_token  => re( '^.+$' ),
-      token_type    => 'bearer',
+      token_type    => 'Bearer',
       expires_in    => '3600',
       refresh_token => re( '^.+$' ),
     },
@@ -178,7 +178,7 @@ sub run {
     $t->tx->res->json,
     {
       access_token  => re( '^.+$' ),
-      token_type    => 'bearer',
+      token_type    => 'Bearer',
       expires_in    => '3600',
       refresh_token => re( '^.+$' ),
     },

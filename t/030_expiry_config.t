@@ -90,7 +90,7 @@ cmp_deeply(
   $t->tx->res->json,
   {
     access_token  => re( '^.+$' ),
-    token_type    => 'bearer',
+    token_type    => 'Bearer',
     expires_in    => $TTL,
     refresh_token => re( '^.+$' ),
   },
@@ -130,7 +130,7 @@ cmp_deeply(
   $t->tx->res->json,
   {
     access_token  => re( '^.+$' ),
-    token_type    => 'bearer',
+    token_type    => 'Bearer',
     expires_in    => $TTL,
     refresh_token => re( '^.+$' ),
   },
