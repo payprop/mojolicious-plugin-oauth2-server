@@ -41,16 +41,22 @@ Server
 What we have available in this examples/ directory:
 ---------------------------------------------------
 
-examples/oauth2_client.pl           - A Client
+examples/oauth2_client.pl           - A Client - this will need at least v1.51 of
+                                     the Mojolicious::Plugin::OAuth2 module
 
 examples/oauth2_server_simple.pl    - An Authorization Server and Resource Server
                                      (that only runs one proc and will not retain
-                                     tokens across restarts) in its simplest form
+                                     tokens across restarts) in its simplest form.
+                                     it will not prompt for login or permission
+                                     so is useful to "emulate" an oauth2 server
 
 examples/oauth2_server_realistic.pl - An Authorization Server and Resource Server
-                                     (that can handle multiple procs and restarts
+                                     that will prompt for login and permission so
+                                     is a more realistic emulation. configured with
+                                     the examples/oauth2_db.json file. also of note
+                                     this can handle multiple procs and restarts
                                      without losing know tokens - although will
-                                     not scale, you should use a database really)
+                                     not scale, you should use a database really.
 
 examples/oauth2_server_db.pl       - As above but uses a db (you will need mongodb
                                      and the perl MongoDB module to be able to use

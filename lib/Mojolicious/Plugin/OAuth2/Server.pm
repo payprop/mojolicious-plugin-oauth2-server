@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.10
+0.11
 
 =head1 SYNOPSIS
 
@@ -76,6 +76,11 @@ Then in your controller:
   }
 
 =head1 DESCRIPTION
+
+This plugin implements the OAuth2 "Authorization Code Grant" flow as described
+at L<http://tools.ietf.org/html/rfc6749#section-4.1>. It is not a complete
+implementation of RFC6749, as it is rather large in scope. However the extra
+functionality and flows may be added in the future.
 
 This plugin enables you to easily (?) write an OAuth2 Authorization Server (AS)
 and OAuth2 Resource Server (RS) using Mojolicious. It implements the required
@@ -197,7 +202,7 @@ use MIME::Base64 qw/ encode_base64 decode_base64 /;
 use Carp qw/ croak /;
 use Crypt::PRNG qw/ random_string /;
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 my %CLIENTS;
 my %AUTH_CODES;
@@ -1068,6 +1073,11 @@ your app, which will call the above functions in the correct order. The helper
 oauth also becomes available to call in various controllers, templates, etc:
 
   $c->oauth( 'post_image' ) or return $c->render( status => 401 );
+
+=head1 EXAMPLES
+
+There are more examples included with this distribution in the examples/ dir.
+See examples/README for more information about these examples.
 
 =head1 CLIENT SECRET AND TOKEN SECURITY
 

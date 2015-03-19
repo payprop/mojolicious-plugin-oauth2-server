@@ -150,30 +150,33 @@ sub _verify_auth_code {
 		$c->app->log->debug( "Auth code does not exist" )
 			if ! $ac;
 		$c->app->log->debug( "Client secret does not match" )
-			if ( $uri && $ac->redirect_uri ne $uri );
-		$c->app->log->debug( "Auth code expired" )
-			if ( $ac->expires->epoch <= time );
-		$c->app->log->debug( "Client secret does not match" )
 			if ! _check_password( $client_secret,$client->secret );
 
-		if ( $ac->verified ) {
-			# the auth code has been used before - we must revoke the auth code
-			# and any associated access tokens (same client_id and user_id)
-			$c->app->log->debug(
-				"Auth code already used to get access token, "
-				. "revoking all associated access tokens"
-			);
-			$ac->delete;
+		if ( $ac ) {
+			$c->app->log->debug( "Client secret does not match" )
+				if ( $uri && $ac->redirect_uri ne $uri );
+			$c->app->log->debug( "Auth code expired" )
+				if ( $ac->expires->epoch <= time );
 
-			if ( my $rs = $c->model->rs( 'Oauth2AccessToken' )->search({
-				client_id      => $client_id,
-				user_id        => $ac->user_id,
-			}) ) {
-				while ( my $row = $rs->next ) {
-					$row->delete;
+			if ( $ac->verified ) {
+				# the auth code has been used before - we must revoke the auth code
+				# and any associated access tokens (same client_id and user_id)
+				$c->app->log->debug(
+					"Auth code already used to get access token, "
+					. "revoking all associated access tokens"
+				);
+				$ac->delete;
+
+				if ( my $rs = $c->model->rs( 'Oauth2AccessToken' )->search({
+					client_id      => $client_id,
+					user_id        => $ac->user_id,
+				}) ) {
+					while ( my $row = $rs->next ) {
+						$row->delete;
+					}
 				}
 			}
-    	}
+		}
 
 		return ( 0,'invalid_grant' );
 	}

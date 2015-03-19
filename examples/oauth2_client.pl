@@ -8,6 +8,7 @@ use Mojolicious::Lite;
 my $host = $ENV{HOST} // '127.0.0.1';
 
 plugin 'OAuth2', {
+  fix_get_token => 1,
   overly_attached_social_network => {
      authorize_url => "https://$host:3000/oauth/authorize?response_type=code",
      token_url     => "https://$host:3000/oauth/access_token",
@@ -32,11 +33,12 @@ get '/auth' => sub {
     $self->delay(
       sub {
         my $delay = shift;
-        $self->get_token( overly_attached_social_network => $delay->begin )
+        $self->oauth2->get_token( overly_attached_social_network => $delay->begin )
       },
       sub {
-        my( $delay,$token,$tx ) = @_;
-        return $self->render( json => $tx->res->json );
+        my( $delay,$error,$data ) = @_;
+		return $self->render( error => $error ) if ! $data->{access_token};
+        return $self->render( json => $data );
       },
     );
   }
