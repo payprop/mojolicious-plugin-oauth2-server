@@ -6,6 +6,7 @@ use warnings;
 use Mojolicious::Lite;
 
 plugin 'OAuth2::Server' => {
+  jwt_secret => 'is it safe?',
   clients              => {
     TrendyNewService => {
       client_secret => 'boo',

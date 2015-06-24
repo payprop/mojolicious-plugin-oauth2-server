@@ -14,6 +14,7 @@ my $TTL = 3;
 MOJO_APP: {
   # plugin configuration
   plugin 'OAuth2::Server' => {
+    jwt_secret            => "i'm not sure why that's surprising",
     auth_code_ttl         => $TTL,
     access_token_ttl      => $TTL,
     clients               => {

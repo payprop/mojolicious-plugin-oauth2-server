@@ -17,6 +17,7 @@ WriteMakefile(
     'Time::HiRes'  => 0,
     'Carp'         => 0,
     'CryptX'       => '0.021',
+    'Mojo::JWT'    => '0.04',
   },
   BUILD_REQUIRES => {
     'FindBin'         => 0,

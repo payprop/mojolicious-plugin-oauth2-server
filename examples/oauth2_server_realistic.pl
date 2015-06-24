@@ -292,6 +292,7 @@ sub _revoke_access_token {
 }
 
 plugin 'OAuth2::Server' => {
+  jwt_secret                => 'random random random not random',
   auth_code_ttl             => 300,
   access_token_ttl          => 600,
 
