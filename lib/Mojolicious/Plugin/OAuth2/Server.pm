@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.21
+0.22
 
 =head1 SYNOPSIS
 
@@ -218,7 +218,7 @@ use Carp qw/ croak /;
 use Crypt::PRNG qw/ random_string /;
 use Try::Tiny;
 
-our $VERSION = '0.21';
+our $VERSION = '0.22';
 
 my %CLIENTS;
 my %AUTH_CODES;
