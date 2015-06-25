@@ -13,11 +13,14 @@ t/025_no_config.t
 t/030_expiry_config.t
 t/035_login_confirm_error.t
 t/040_full_fat_app.t
+t/050_jwt.t
+t/060_jwt_with_revoke.t
 t/AllTests.pm
 examples/README
 examples/oauth2_client.pl
 examples/oauth2_db.json
 examples/oauth2_server_simple.pl
+examples/oauth2_server_simple_jwt.pl
 examples/oauth2_server_realistic.pl
 examples/oauth2_server_db.pl
 examples/OAuth2Functions.pm
