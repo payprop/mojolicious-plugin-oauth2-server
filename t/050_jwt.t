@@ -117,8 +117,10 @@ cmp_deeply(
   'json_is_deeply'
 );
 
-my $decoded_access_token = Mojo::JWT->new( secret => $jwt_secret )->decode( $res->{access_token} );
-my $decoded_refresh_token = Mojo::JWT->new( secret => $jwt_secret )->decode( $res->{refresh_token} );
+my $decoded_access_token = Mojo::JWT->new( secret => $jwt_secret )
+  ->decode( $res->{access_token} );
+my $decoded_refresh_token = Mojo::JWT->new( secret => $jwt_secret )
+  ->decode( $res->{refresh_token} );
 
 cmp_deeply(
 	$decoded_access_token,

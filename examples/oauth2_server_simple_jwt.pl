@@ -5,10 +5,9 @@ use warnings;
 
 use Mojolicious::Lite;
 use Mojo::JWT;
-use Try::Tiny;
 
 plugin 'OAuth2::Server' => {
-  jwt_secret => "Is it secret?, Is it safe?";
+  jwt_secret => "Is it secret?, Is it safe?",
   clients => {
     TrendyNewService => {
       client_secret => 'boo',

@@ -79,7 +79,7 @@ Then in your controller:
 
 This plugin implements the OAuth2 "Authorization Code Grant" flow as described
 at [http://tools.ietf.org/html/rfc6749#section-4.1](http://tools.ietf.org/html/rfc6749#section-4.1). It is not a complete
-implementation of RFC6749, as it is rather large in scope. However the extra
+implementation of RFC6749, as that is rather large in scope. However the extra
 functionality and flows may be added in the future.
 
 This plugin enables you to easily (?) write an OAuth2 Authorization Server (AS)
@@ -107,6 +107,14 @@ These will be explained in more detail below, in ["REQUIRED FUNCTIONS"](#require
 can also see the tests and examples included with this distribution. OAuth2
 seems needlessly complicated at first, hopefully this plugin will clarify the
 various steps and simplify the implementation.
+
+If you would still like to use the plugin in an easy way, but also have ACs and
+ATs persistent across restarts and shared between multi processes then you can
+supply a jwt\_secret. What you lose when doing this is the ability for tokens to
+be revoked. You could implement the verify\_auth\_code and verify\_access\_token
+methods to handle the revoking in your app. So that would be halfway between
+the "simple" and the "realistic" way. ["CLIENT SECRET, TOKEN SECURITY, AND JWT"](#client-secret-token-security-and-jwt)
+has more detail about JWTs.
 
 Note that OAuth2 requires https, so you need to have the optional Mojolicious
 dependency required to support it. Run the command below to check if
@@ -626,24 +634,25 @@ this information to validate an auth code / access token / refresh token without
 doing a database lookup. However, it gets somewhat more complicated when you
 need to revoke tokens. For more information about JWTs and revoking tokens see
 [https://auth0.com/blog/2015/03/10/blacklist-json-web-token-api-keys/](https://auth0.com/blog/2015/03/10/blacklist-json-web-token-api-keys/) and
-[https://tools.ietf.org/html/rfc7519](https://tools.ietf.org/html/rfc7519)
+[https://tools.ietf.org/html/rfc7519](https://tools.ietf.org/html/rfc7519). Ultimately you're going to have to use
+some shared store to revoke tokens, but using the jwt\_secret config setting means
+you can simplify parts of the process as the JWT will contain the client, user,
+and scope information (JWTs are also easy to debug: [http://jwt.io](http://jwt.io)).
 
-When using JWTs expiry dates will automatically checked ([Mojo::JWT](https://metacpan.org/pod/Mojo::JWT) has this
+When using JWTs expiry dates will be automatically checked ([Mojo::JWT](https://metacpan.org/pod/Mojo::JWT) has this
 built in to the decoding) and the hash returned from the call to ->oauth will
 look something like this:
 
     {
-      'scopes' => [
-                  'post_images',
-                  'annoy_friends'
-                ],
-      'iat' => 1435225100,
-      'type' => 'access', # type: auth, access, or refresh
-      'exp' => 1435228700,
-      'client' => 'TrendyNewService',
-      'user_id' => 'some user id', # as returned from verify_auth_code
-      'jti' => 'psclb1AcC2OjAKtVJRg1JjRJumkVTkDj',
-      'aud' => undef # redirect uri in case of type: auth
+      'iat'     => 1435225100,               # generation time
+      'exp'     => 1435228700,               # expiry time
+      'aud'     => undef                     # redirect uri in case of type: auth
+      'jti'     => 'psclb1AcC2OjAKtVJRg1JjRJumkVTkDj', # unique
+
+      'type'    => 'access',                 # auth, access, or refresh
+      'scopes'  => [ 'list','of','scopes' ], # as requested by client
+      'client'  => 'some client id',         # as returned from verify_auth_code
+      'user_id' => 'some user id',           # as returned from verify_auth_code
     };
 
 Since a call for an access token requires both the authorization code and the

@@ -188,6 +188,8 @@ sub run {
   isnt( $t->tx->res->json->{access_token},$access_token,'new access_token' );
   isnt( $t->tx->res->json->{refresh_token},$refresh_token,'new refresh_token' );
 
+  return if $args->{skip_revoke_tests};
+
   my $new_access_token  = $t->tx->res->json->{access_token};
   my $new_refresh_token = $t->tx->res->json->{refresh_token};
 
