@@ -130,10 +130,10 @@ cmp_deeply(
     'exp' => re( '^\d{10}$' ),
     'iat' => re( '^\d{10}$' ),
     'jti' => re( '^.{32}$' ),
-    'scopes' => {
-      eat => 1,
-      sleep => 1,
-    }
+    'scopes' => [
+      'eat',
+      'sleep',
+    ]
   },
 	'decoded JWT (access token)',
 );
@@ -147,10 +147,10 @@ cmp_deeply(
     'user_id' => undef,
     'iat' => re( '^\d{10}$' ),
     'jti' => re( '^.{32}$' ),
-    'scopes' => {
-      eat => 1,
-      sleep => 1,
-    }
+    'scopes' => [
+      'eat',
+      'sleep',
+    ]
   },
 	'decoded JWT (refresh token)',
 );

@@ -208,6 +208,7 @@ use Time::HiRes qw/ gettimeofday /;
 use MIME::Base64 qw/ encode_base64 decode_base64 /;
 use Carp qw/ croak /;
 use Crypt::PRNG qw/ random_string /;
+use Try::Tiny;
 
 our $VERSION = '0.20';
 
@@ -396,7 +397,8 @@ sub _access_token_request {
     );
     $old_refresh_token = $refresh_token;
   } else {
-    my $verify_auth_code_sub = $config->{verify_auth_code} // \&_verify_auth_code;
+    my $verify_auth_code_sub = $config->{verify_auth_code}
+      // \&_verify_auth_code;
     ( $client,$error,$scope,$user_id ) = $verify_auth_code_sub->(
       $self,$client_id,$client_secret,$auth_code,$url
     );
@@ -481,8 +483,8 @@ sub _token {
 sub _verify_access_token_and_scope {
   my ( $app,$config,$refresh_token,$c,@scopes ) = @_;
 
-  my $verify_access_token_sub
-    = $config->{verify_access_token} // \&_verify_access_token;
+  my $verify_access_token_sub = $config->{verify_access_token}
+    // \&_verify_access_token;
 
   my $access_token;
 
@@ -689,6 +691,8 @@ the verify_auth_code callback for verification:
 =cut
 
 sub _store_auth_code {
+  return if $JWT_SECRET;
+
   my ( $c,$auth_code,$client_id,$expires_in,$uri,@scopes ) = @_;
 
   $AUTH_CODES{$auth_code} = {
@@ -765,6 +769,8 @@ be a user identifier:
 =cut
 
 sub _verify_auth_code {
+  return _verify_auth_code_jwt( @_ ) if $JWT_SECRET;
+
   my ( $c,$client_id,$client_secret,$auth_code,$uri ) = @_;
 
   my ( $sec,$usec,$rand ) = split( '-',decode_base64( $auth_code ) );
@@ -811,6 +817,40 @@ sub _verify_auth_code {
     return ( 1,undef,$AUTH_CODES{$auth_code}{scope} );
   }
 
+}
+
+sub _verify_auth_code_jwt {
+  my ( $c,$client_id,$client_secret,$auth_code,$uri ) = @_;
+
+  my $client = $CLIENTS{$client_id}
+    || return ( 0,'unauthorized_client' );
+
+  return ( 0,'invalid_grant' )
+    if ( $client_secret ne $client->{client_secret} );
+
+  my $auth_code_payload;
+
+  try {
+    $auth_code_payload = Mojo::JWT->new( secret => $JWT_SECRET )
+      ->decode( $auth_code );
+  } catch {
+    chomp;
+    $c->app->log->error( 'OAuth2::Server Auth code: ' . $_ );
+    return ( 0,'invalid_grant' );
+  };
+
+  if (
+    ! $auth_code_payload
+    or $auth_code_payload->{type} ne 'auth'
+    or $auth_code_payload->{client} ne $client_id
+    or ( $uri && $auth_code_payload->{aud} ne $uri )
+  ) {
+    return ( 0,'invalid_grant' );
+  }
+
+  my $scope = $auth_code_payload->{scopes};
+
+  return ( $client_id,undef,$scope,undef );
 }
 
 =head2 store_access_token
@@ -902,6 +942,8 @@ the verify_access_token callback for verification:
 =cut
 
 sub _store_access_token {
+  return if $JWT_SECRET;
+
   my (
     $c,$c_id,$auth_code,$access_token,$refresh_token,
     $expires_in,$scope,$old_refresh_token
@@ -1019,6 +1061,8 @@ message (almost certainly 'invalid_grant' in this case)
 =cut
 
 sub _verify_access_token {
+  return _verify_access_token_jwt( @_ ) if $JWT_SECRET;
+
   my ( $c,$access_token,$scopes_ref,$is_refresh_token ) = @_;
 
   if (
@@ -1066,6 +1110,40 @@ sub _verify_access_token {
 
   $c->app->log->debug( "OAuth2::Server: Access token does not exist" );
   return ( 0,'invalid_grant' )
+}
+
+sub _verify_access_token_jwt {
+  my ( $c,$access_token,$scopes_ref,$is_refresh_token ) = @_;
+
+  my $access_token_payload;
+
+  try {
+    $access_token_payload = Mojo::JWT->new( secret => $JWT_SECRET )
+      ->decode( $access_token );
+  } catch {
+    chomp;
+    $c->app->log->error( 'OAuth2::Server Access token: ' . $_ );
+    return ( 0,'invalid_grant' );
+  };
+
+  if ( $access_token_payload ) {
+
+    if ( $scopes_ref ) {
+      foreach my $scope ( @{ $scopes_ref // [] } ) {
+        if ( ! grep { $_ eq $scope } @{ $access_token_payload->{scopes} } ) {
+          $c->app->log->debug(
+            "OAuth2::Server: Access token does not have scope ($scope)"
+          );
+          return ( 0,'invalid_grant' );
+        }
+      }
+    }
+
+    return $access_token_payload;
+  }
+
+  $c->app->log->debug( "OAuth2::Server: Access token does not exist" );
+  return 0;
 }
 
 1;
