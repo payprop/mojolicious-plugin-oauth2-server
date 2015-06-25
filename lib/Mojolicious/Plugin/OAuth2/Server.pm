@@ -122,8 +122,9 @@ marked here with a *
 
 =head2 jwt_secret
 
-This is the secret key that will be used in generation of the auth codes, access
-tokens, and refresh tokens. Note that this is required for any use of the plugin
+This is optional. If set JWTs will be returned for the auth codes, access, and
+refresh tokens. JWTs allow you to validate tokens without doing a db lookup, but
+there are certain considerations (see L<CLIENT SECRET, TOKEN SECURITY, AND JWT>)
 
 =head2 authorize_route
 
@@ -243,8 +244,7 @@ sub register {
   my $auth_route   = $config->{authorize_route}    // '/oauth/authorize';
   my $atoken_route = $config->{access_token_route} // '/oauth/access_token';
 
-  $JWT_SECRET = $config->{jwt_secret} ||
-    croak "OAuth2::Server config must provide jwt_secret";
+  $JWT_SECRET = $config->{jwt_secret} // undef;
 
   if (
     # if we don't have a list of clients
@@ -337,7 +337,7 @@ sub _authorization_request {
 
     $self->app->log->debug( "OAuth2::Server: Generating auth code for $c_id" );
     my $expires_in = $config->{auth_code_ttl} // 600;
-    my $auth_code = _jwt( $expires_in,$c_id,\@scopes,'auth' );
+    my $auth_code = _token( $expires_in,$c_id,\@scopes,'auth',$url );
 
     my $store_auth_code = $config->{store_auth_code} // \&_store_auth_code;
     $store_auth_code->( $self,$auth_code,$c_id,$expires_in,$url,@scopes );
@@ -388,16 +388,16 @@ sub _access_token_request {
 
   my $json_response = {};
   my $status        = 400;
-  my ( $client,$error,$scope,$old_refresh_token );
+  my ( $client,$error,$scope,$old_refresh_token,$user_id );
 
   if ( $grant_type eq 'refresh_token' ) {
-    ( $client,$error,$scope ) = _verify_access_token_and_scope(
+    ( $client,$error,$scope,$user_id ) = _verify_access_token_and_scope(
       $app,$config,$refresh_token,$self
     );
     $old_refresh_token = $refresh_token;
   } else {
     my $verify_auth_code_sub = $config->{verify_auth_code} // \&_verify_auth_code;
-    ( $client,$error,$scope ) = $verify_auth_code_sub->(
+    ( $client,$error,$scope,$user_id ) = $verify_auth_code_sub->(
       $self,$client_id,$client_secret,$auth_code,$url
     );
   }
@@ -407,8 +407,8 @@ sub _access_token_request {
     $self->app->log->debug( "OAuth2::Server: Generating access token for $client" );
 
     my $expires_in    = $config->{access_token_ttl} // 3600;
-    my $access_token  = _jwt( $expires_in,$client,$scope,'access' );
-    my $refresh_token = _jwt( undef,$client,$scope,'refresh' );
+    my $access_token  = _token( $expires_in,$client,$scope,'access',undef,$user_id );
+    my $refresh_token = _token( undef,$client,$scope,'refresh',undef,$user_id );
 
     my $store_access_token_sub
       = $config->{store_access_token} // \&_store_access_token;
@@ -445,20 +445,35 @@ sub _access_token_request {
   );
 }
 
-sub _jwt {
-  my ( $ttl,$client_id,$scopes,$type ) = @_;
+sub _token {
+  my ( $ttl,$client_id,$scopes,$type,$redirect_url,$user_id ) = @_;
 
-  my $code = Mojo::JWT->new(
-    ( $ttl ? ( expires => time + $ttl ) : () ),
-    secret  => $JWT_SECRET,
-    set_iat => 1,
-    claims  => {
-      type   => $type,
-      client => $client_id,
-      scopes => $scopes,
-      jti    => random_string(32),
-    },
-  )->encode;
+  my $code;
+
+  if ( ! $JWT_SECRET ) {
+    my ( $sec,$usec ) = gettimeofday;
+    $code = encode_base64( join( '-',$sec,$usec,rand(),random_string(30) ),'' );
+  } else {
+    $code = Mojo::JWT->new(
+      ( $ttl ? ( expires => time + $ttl ) : () ),
+      secret  => $JWT_SECRET,
+      set_iat => 1,
+      # https://tools.ietf.org/html/rfc7519#section-4
+      claims  => {
+        # Registered Claim Names
+#        iss    => undef, # us, the auth server / application (set using plugin config?)
+#        sub    => undef, # the logged in user, we could get this by returning it from the resource_owner_logged_in callback
+        aud    => $redirect_url, # the "audience"
+        jti    => random_string(32),
+
+        # Private Claim Names
+        user_id      => $user_id,
+        client       => $client_id,
+        type         => $type,
+        scopes       => $scopes,
+      },
+    )->encode;
+  }
 
   return $code;
 }
@@ -695,12 +710,13 @@ Authorization Server. The callback is passed the Mojolicious controller object,
 the client_id, the client_secret, the authorization code, and the redirect uri.
 
 The callback should verify the authorization code using the rules defined in
-the reference RFC above, and return a list with 3 elements. The first element
+the reference RFC above, and return a list with 4 elements. The first element
 should be a client identifier (a scalar, or reference) in the case of a valid
 authorization code or 0 in the case of an invalid authorization code. The second
 element should be the error message in the case of an invalid authorization
 code. The third element should be a hash reference of scopes as requested by the
-client in the original call for an authorization code:
+client in the original call for an authorization code. The fourth element should
+be a user identifier:
 
   my $verify_auth_code_sub = sub {
     my ( $c,$client_id,$client_secret,$auth_code,$uri ) = @_;
@@ -743,7 +759,7 @@ client in the original call for an authorization code:
 
     $auth_codes->update( $ac,{ verified => 1 } );
 
-    return ( $client_id,undef,$scope );
+    return ( $client_id,undef,$scope,$ac->{user_id} );
   };
 
 =cut
@@ -1061,7 +1077,6 @@ can configuration the plugin:
 
   $self->plugin(
     'OAuth::Server' => {
-      jwt_secret                => 'some secret key',
       login_resource_owner      => $resource_owner_logged_in_sub,
       confirm_by_resource_owner => $resource_owner_confirm_scopes_sub,
       verify_client             => $verify_client_sub,
@@ -1083,10 +1098,16 @@ oauth also becomes available to call in various controllers, templates, etc:
 There are more examples included with this distribution in the examples/ dir.
 See examples/README for more information about these examples.
 
-=head1 CLIENT SECRET AND TOKEN SECURITY
+=head1 CLIENT SECRET, TOKEN SECURITY, AND JWT
 
-The auth codes and access tokens generated by the plugin should be unique. They
-use the L<Mojo::JWT> module and each token should contain a jti that uses a call
+The auth codes and access tokens generated by the plugin should be unique. When
+jwt_secret is B<not> supplied they are generated using a combination of the
+generation time (to microsecond precision) + rand() + a call to Crypt::PRNG's
+random_string function. These are then base64 encoded to make sure there are no
+problems with URL encoding.
+
+If jwt_secret is set, which should be a strong secret, the tokens are created
+with the L<Mojo::JWT> module and each token should contain a jti using a call
 to Crypt::PRNG's random_string function. You can decode the tokens, typically
 with L<Mojo::JWT>, to get the information about the client and scopes - but you
 should not trust the token unless the signature matches.
@@ -1094,8 +1115,27 @@ should not trust the token unless the signature matches.
 As the JWT contains the client information and scopes you can, in theory, use
 this information to validate an auth code / access token / refresh token without
 doing a database lookup. However, it gets somewhat more complicated when you
-need to revoke tokens. See L<https://auth0.com/blog/2015/03/10/blacklist-json-web-token-api-keys/>
-for some approaches to this.
+need to revoke tokens. For more information about JWTs and revoking tokens see
+L<https://auth0.com/blog/2015/03/10/blacklist-json-web-token-api-keys/> and
+L<https://tools.ietf.org/html/rfc7519>
+
+When using JWTs expiry dates will automatically checked (L<Mojo::JWT> has this
+built in to the decoding) and the hash returned from the call to ->oauth will
+look something like this:
+
+  {
+    'scopes' => [
+                'post_images',
+                'annoy_friends'
+              ],
+    'iat' => 1435225100,
+    'type' => 'access', # type: auth, access, or refresh
+    'exp' => 1435228700,
+    'client' => 'TrendyNewService',
+    'user_id' => 'some user id', # as returned from verify_auth_code
+    'jti' => 'psclb1AcC2OjAKtVJRg1JjRJumkVTkDj',
+    'aud' => undef # redirect uri in case of type: auth
+  };
 
 Since a call for an access token requires both the authorization code and the
 client secret you don't need to worry too much about protecting the authorization

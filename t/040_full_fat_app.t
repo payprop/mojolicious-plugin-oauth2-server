@@ -12,7 +12,6 @@ sub startup {
 
   $self->plugin(
     'OAuth2::Server' => {
-      'jwt_secret'           => 'something something something',
       'verify_client'        => sub { return ( 1 ) },
       'login_resource_owner' => sub {
         my ( $c ) = @_;

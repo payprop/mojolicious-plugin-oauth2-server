@@ -98,7 +98,6 @@ my $verify_access_token_sub = sub {
 MOJO_APP: {
   # plugin configuration
   plugin 'OAuth2::Server' => {
-    jwt_secret          => "belle je m'en vais en allemagne",
     authorize_route     => '/o/auth',
     access_token_route  => '/o/token',
     verify_client       => $verify_client_sub,

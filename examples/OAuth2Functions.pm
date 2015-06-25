@@ -190,7 +190,7 @@ sub _verify_auth_code {
 	my %scope = map { $_->scope->description => 1 }
 		$ac->oauth2_auth_code_scopes->all;
 
-	return ( $client_id,undef,{ %scope } );
+	return ( $client_id,undef,{ %scope },$ac->user_id );
 }
 
 sub _check_password {

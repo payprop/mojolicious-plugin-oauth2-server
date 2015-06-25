@@ -1,5 +1,10 @@
 -- N.B some of these tables assume you have a user table with
 -- an id column for linking access tokens, etc, to a user
+-- and the use of varchar( 255 ) is unlikey to be big enough
+-- if you use the jwt_secret option of the plugin to make
+-- tokens JWTs (at which point a TEXT field would be required,
+-- and then that has an impact on how you defined the indexes
+-- and primary keys...)
 
 create table if not exists oauth2_client (
 	id            varchar( 255 ) NOT NULL PRIMARY KEY,

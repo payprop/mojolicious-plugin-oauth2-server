@@ -156,12 +156,13 @@ my $verify_auth_code_sub = sub {
   # those stored in the client (i.e. what the auth request restriced scopes
   # to and not everything the client is capable of)
   my $scope = $oauth2_data->{auth_codes}{$auth_code}{scope};
+  my $user_id = $oauth2_data->{auth_codes}{$auth_code}{user_id};
 
   $oauth2_data->{verified_auth_codes}{$auth_code} = 1;
 
   save_oauth2_data( $oauth2_data );
 
-  return ( $client_id,undef,$scope );
+  return ( $client_id,undef,$scope,$user_id );
 };
 
 my $store_access_token_sub = sub {
@@ -292,7 +293,6 @@ sub _revoke_access_token {
 }
 
 plugin 'OAuth2::Server' => {
-  jwt_secret                => 'random random random not random',
   auth_code_ttl             => 300,
   access_token_ttl          => 600,
 

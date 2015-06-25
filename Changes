@@ -1,11 +1,11 @@
 Revision history for Mojolicious-Plugin-OAuth2-Server
 
 0.20     2015-06-24
-        - auth codes, access tokens, and refresh tokens returned are now
+        - auth codes, access tokens, and refresh tokens returned can now be
           JWTs (implemented via Mojo::JWT). this allows validation without
           database lookup *should you want to do that*. see the examples,
-          tests, and perldoc. N.B. this is a *breaking change* - you
-          *MUST* now supply the jwt_secret in the config passed to the plugin
+          tests, and perldoc. to get JWTs set the jwt_secret in the plugin
+          config
 
 0.11     2015-03-19
         - update examples/oauth2_client.pl to work with latest version of

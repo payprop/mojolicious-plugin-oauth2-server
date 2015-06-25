@@ -8,7 +8,7 @@ use Test::More;
 use Test::Exception;
 
 throws_ok(
-  sub { plugin 'OAuth2::Server' => { jwt_secret => 'foo' }; },
+  sub { plugin 'OAuth2::Server' => {}; },
   qr/OAuth2::Server config must provide either clients or overrides/,
   'plugin with no config croaks',
 );

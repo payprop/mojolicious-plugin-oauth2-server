@@ -12,7 +12,6 @@ use AllTests;
 MOJO_APP: {
   # plugin configuration
   plugin 'OAuth2::Server' => {
-    jwt_secret           => 'prince edward island potatoes',
     clients              => {
       1 => {
         client_secret => 'boo',

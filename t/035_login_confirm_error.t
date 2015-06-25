@@ -19,7 +19,6 @@ my $LOGGED_IN = 0;
 MOJO_APP: {
   # plugin configuration
   plugin 'OAuth2::Server' => {
-    jwt_secret                => 'everything everything',
     verify_client             => sub { return ( 1 ) },
     login_resource_owner      => sub {
       my ( $c ) = @_;

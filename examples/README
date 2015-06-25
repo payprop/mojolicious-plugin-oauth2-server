@@ -50,6 +50,11 @@ examples/oauth2_server_simple.pl    - An Authorization Server and Resource Serve
                                      it will not prompt for login or permission
                                      so is useful to "emulate" an oauth2 server
 
+examples/oauth2_server_simple_jwt.pl - As above but uses JWTs for the auth codes
+                                     and access/refresh tokens. this allows the
+                                     server to be persistent and multi threaded
+                                     but makes revoking tokens slightly awkward
+
 examples/oauth2_server_realistic.pl - An Authorization Server and Resource Server
                                      that will prompt for login and permission so
                                      is a more realistic emulation. configured with

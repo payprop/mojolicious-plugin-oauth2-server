@@ -6,7 +6,6 @@ use warnings;
 use Mojolicious::Lite;
 
 plugin 'OAuth2::Server' => {
-  jwt_secret => 'is it safe?',
   clients              => {
     TrendyNewService => {
       client_secret => 'boo',
@@ -31,7 +30,7 @@ group {
   any '/post_image'    => sub { shift->render( text => "Posted Image" ); };
 };
 
-any '/track_location' => sub {
+any '/api/track_location' => sub {
   my ( $c ) = @_;
   $c->oauth( 'track_location' )
       || return $c->render( status => 401, text => 'You cannot track location' );

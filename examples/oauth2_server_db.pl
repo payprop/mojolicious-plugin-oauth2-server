@@ -174,7 +174,7 @@ my $verify_auth_code_sub = sub {
 
   $auth_codes->update( $ac,{ verified => 1 } );
 
-  return ( $client_id,undef,$scope );
+  return ( $client_id,undef,$scope,$ac->{user_id} );
 };
 
 my $store_access_token_sub = sub {
@@ -304,7 +304,6 @@ sub _revoke_access_token {
 }
 
 plugin 'OAuth2::Server' => {
-  jwt_secret                => 'something opaque here',
   auth_code_ttl             => 300,
   access_token_ttl          => 600,
 

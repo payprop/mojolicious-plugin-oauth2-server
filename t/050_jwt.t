@@ -76,7 +76,9 @@ cmp_deeply(
 	$decoded_auth_code,
 	{
     'type' => 'auth',
+    'aud' => 'https://client/cb',
     'client' => '1',
+    'user_id' => undef,
     'exp' => re( '^\d{10}$' ),
     'iat' => re( '^\d{10}$' ),
     'jti' => re( '^.{32}$' ),
@@ -122,7 +124,9 @@ cmp_deeply(
 	$decoded_access_token,
 	{
     'type' => 'access',
+    'aud' => undef,
     'client' => '1',
+    'user_id' => undef,
     'exp' => re( '^\d{10}$' ),
     'iat' => re( '^\d{10}$' ),
     'jti' => re( '^.{32}$' ),
@@ -138,7 +142,9 @@ cmp_deeply(
 	$decoded_refresh_token,
 	{
     'type' => 'refresh',
+    'aud' => undef,
     'client' => '1',
+    'user_id' => undef,
     'iat' => re( '^\d{10}$' ),
     'jti' => re( '^.{32}$' ),
     'scopes' => {
