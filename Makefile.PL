@@ -35,8 +35,8 @@ WriteMakefile(
     resources => {
       license    => 'http://dev.perl.org/licenses/',
       homepage   => 'https://metacpan.org/module/Mojolicious::Plugin::OAuth2::Server',
-      bugtracker => 'https://github.com/leejo/mojolicious-plugin-oauth2-server/issues',
-      repository => 'https://github.com/leejo/mojolicious-plugin-oauth2-server'
+      bugtracker => 'https://github.com/G3S/mojolicious-plugin-oauth2-server/issues',
+      repository => 'https://github.com/G3S/mojolicious-plugin-oauth2-server'
     },
   },
   test => {

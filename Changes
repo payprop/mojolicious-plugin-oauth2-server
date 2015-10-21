@@ -1,5 +1,8 @@
 Revision history for Mojolicious-Plugin-OAuth2-Server
 
+0.23     2015-10-21
+        - move github repo to G3S org
+
 0.22     2015-06-25
         - auth codes, access tokens, and refresh tokens returned can now be
           JWTs (implemented via Mojo::JWT). this allows validation without
