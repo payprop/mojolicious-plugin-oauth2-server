@@ -13,12 +13,6 @@ WriteMakefile(
   LICENSE       => 'perl',
   PREREQ_PM => {
     'Mojolicious'  => '5.37',
-    'MIME::Base64' => 0,
-    'Time::HiRes'  => 0,
-    'Carp'         => 0,
-    'CryptX'       => '0.021',
-    'Mojo::JWT'    => '0.04',
-    'Try::Tiny'    => '0.22',
   },
   BUILD_REQUIRES => {
     'FindBin'         => 0,
