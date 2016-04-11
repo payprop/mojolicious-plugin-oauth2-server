@@ -18,7 +18,7 @@ Authorization Server / Resource Server with Mojolicious
   use Mojolicious::Lite;
 
   plugin 'OAuth2::Server' => {
-      ... # see CONFIGURATION
+      ... # see SYNOPSIS in Net::OAuth2::AuthorizationServer::AuthorizationCodeGrant
   };
 
   group {
@@ -58,7 +58,7 @@ Or full fat app:
 
     ...
 
-    $self->plugin( 'OAuth2::Server' => $oauth2_server_config );
+    $self->plugin( 'OAuth2::Server' => $oauth2_auth_code_grant_config );
   }
 
 Then in your controller:
@@ -82,127 +82,9 @@ at L<http://tools.ietf.org/html/rfc6749#section-4.1>. It is not a complete
 implementation of RFC6749, as that is rather large in scope. However the extra
 functionality and flows may be added in the future.
 
-This plugin enables you to easily (?) write an OAuth2 Authorization Server (AS)
-and OAuth2 Resource Server (RS) using Mojolicious. It implements the required
-flows and checks leaving you to add functions that are necessary, for example,
-to verify an auth code (AC), access token (AT), etc.
-
-In its simplest form you can call the plugin with just a hashref of known clients
-and the code will "just work" - however in doing this you will not be able to
-run a multi process persistent OAuth2 AS/RS as the known ACs and ATs will not be
-shared between processes and will be lost on a restart.
-
-To use this plugin in a more realistic way you need to at a minimum implement
-the following functions and pass them to the plugin:
-
-  login_resource_owner
-  confirm_by_resource_owner
-  verify_client
-  store_auth_code
-  verify_auth_code
-  store_access_token
-  verify_access_token
-
-These will be explained in more detail below, in L<REQUIRED FUNCTIONS>, and you
-can also see the tests and examples included with this distribution. OAuth2
-seems needlessly complicated at first, hopefully this plugin will clarify the
-various steps and simplify the implementation.
-
-If you would still like to use the plugin in an easy way, but also have ACs and
-ATs persistent across restarts and shared between multi processes then you can
-supply a jwt_secret. What you lose when doing this is the ability for tokens to
-be revoked. You could implement the verify_auth_code and verify_access_token
-methods to handle the revoking in your app. So that would be halfway between
-the "simple" and the "realistic" way. L<CLIENT SECRET, TOKEN SECURITY, AND JWT>
-has more detail about JWTs.
-
-Note that OAuth2 requires https, so you need to have the optional Mojolicious
-dependency required to support it. Run the command below to check if
-L<IO::Socket::SSL> is installed.
-
-  $ mojo version
-
-=head1 CONFIGURATION
-
-The plugin takes several configuration options. To use the plugin in a realistic
-way you need to pass several callbacks, documented in L<REQUIRED FUNCTIONS>, and
-marked here with a *
-
-=head2 jwt_secret
-
-This is optional. If set JWTs will be returned for the auth codes, access, and
-refresh tokens. JWTs allow you to validate tokens without doing a db lookup, but
-there are certain considerations (see L<CLIENT SECRET, TOKEN SECURITY, AND JWT>)
-
-=head2 authorize_route
-
-The route that the Client calls to get an authorization code. Defaults to
-GET /oauth/authorize
-
-=head2 access_token_route
-
-The route the the Client calls to get an access token. Defaults to
-POST /oauth/access_token
-
-=head2 auth_code_ttl
-
-The validity period of the generated authorization code in seconds. Defaults to
-600 seconds (10 minutes)
-
-=head2 access_token_ttl
-
-The validity period of the generated access token in seconds. Defaults to 3600
-seconds (1 hour)
-
-=head2 clients
-
-A hashref of client details keyed like so:
-
-  clients => {
-    $client_id => {
-      client_secret => $client_secret
-      scopes        => {
-        eat       => 1,
-        drink     => 0,
-        sleep     => 1,
-      },
-    },
-  },
-
-Note the clients config is not required if you add the verify_client callback,
-but is necessary for running the plugin in its simplest form (when there are
-*no* callbacks provided)
-
-=head2 login_resource_owner *
-
-A callback that tells the plugin if a Resource Owner (user) is logged in. See
-L<REQUIRED FUNCTIONS>.
-
-=head2 confirm_by_resource_owner *
-
-A callback that tells the plugin if the Resource Owner allowed or disallowed
-access to the Resource Server by the Client. See L<REQUIRED FUNCTIONS>.
-
-=head2 verify_client *
-
-A callback that tells the plugin if a Client is know and given the scopes is
-allowed to ask for an authorization code. See L<REQUIRED FUNCTIONS>.
-
-=head2 store_auth_code *
-
-A callback to store the generated authorization code. See L<REQUIRED FUNCTIONS>.
-
-=head2 verify_auth_code *
-
-A callback to verify an authorization code. See L<REQUIRED FUNCTIONS>.
-
-=head2 store_access_token *
-
-A callback to store generated access / refresh tokens. See L<REQUIRED FUNCTIONS>.
-
-=head2 verify_access_token *
-
-A callback to verify an access token. See L<REQUIRED FUNCTIONS>.
+The bulk of the functionality is implemented in the L<Net::OAuth2::AuthorizationServer>
+distribution, you should see that for more comprehensive documentation and
+examples of usage.
 
 =cut
 
@@ -228,6 +110,17 @@ plugin in its simplest form.
 
   $self->register($app, \%config);
 
+Registering the plugin will call the L<Net::OAuth2::AuthorizationServer>
+and create a C<auth_code_grant> that can be accessed using the defined
+C<authorize_route> and C<access_token_route>. The arguments passed to the
+plugin are passed straight through to the C<auth_code_grant> method in
+the L<Net::OAuth2::AuthorizationServer> module.
+
+Note to support backwards compatibility arguments will be passed to the
+callbacks (as detailed in L<Net::OAuth2::AuthorizationServer::AuthorizationCodeGrant>)
+as a flat list (not a hash). If you wish to receive the arguments as a
+hash in the callbacks then pass args_as_hash => 1 to the plugin here.
+
 =head2 oauth
 
 Checks if there is a valid Authorization: Bearer header with a valid access
@@ -236,6 +129,9 @@ token and if the access token has the requisite scopes. The scopes are optional:
   unless ( my $oauth_details = $c->oauth( @scopes ) ) {
     return $c->render( status => 401, text => 'Unauthorized' );
   }
+
+This calls the L<Net::OAuth2::AuthorizationServer::AuthorizationCodeGrant>
+module (C<verify_token_and_scope> method) to validate the access/refresh token.
 
 =cut
 
@@ -247,12 +143,12 @@ sub register {
   $args_as_hash    = $config->{args_as_hash}       // 0; # zero for back compat
 
   $Grant = Net::OAuth2::AuthorizationServer->new->auth_code_grant(
-    %{ $config },
-    ( map { +"${_}_cb" => $config->{$_} } qw/
+    ( map { +"${_}_cb" => ( $config->{$_} // undef ) } qw/
       verify_client store_auth_code verify_auth_code
       store_access_token verify_access_token
       login_resource_owner confirm_by_resource_owner
-    / )
+    / ),
+    %{ $config },
   );
 
   $app->routes->get(
@@ -481,6 +377,25 @@ sub _access_token_request {
     json   => $json_response,
   );
 }
+
+=head1 SEE ALSO
+
+L<Net::OAuth2::AuthorizationServer> - The dist that handles the bulk of the
+functionality used by this plugin
+
+=head1 AUTHOR
+
+Lee Johnson - C<leejo@cpan.org>
+
+=head1 LICENSE
+
+This library is free software; you can redistribute it and/or modify it under
+the same terms as Perl itself. If you would like to contribute documentation
+or file a bug report then please raise an issue / pull request:
+
+    https://github.com/G3S/net-oauth2-authorizationserver
+
+=cut
 
 1;
 

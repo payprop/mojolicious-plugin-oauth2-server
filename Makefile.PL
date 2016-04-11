@@ -13,6 +13,7 @@ WriteMakefile(
   LICENSE       => 'perl',
   PREREQ_PM => {
     'Mojolicious'  => '5.37',
+    'Net::OAuth2::AuthorizationServer'  => '0.01',
   },
   BUILD_REQUIRES => {
     'FindBin'         => 0,
