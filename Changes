@@ -1,5 +1,12 @@
 Revision history for Mojolicious-Plugin-OAuth2-Server
 
+0.24     2016-04-11
+        - split out bulk of code into Net::OAuth2::AuthorizationServer
+        - ditto for examples and bulk of the perldoc
+        - plugin is fully backwards compatible, although you may want to
+          move to using the args_as_hash option for cleaner callbacks
+          see docs for Net::OAuth2::AuthorizationServer::AuthorizationCodeGrant
+
 0.23     2015-10-21
         - move github repo to G3S org
 

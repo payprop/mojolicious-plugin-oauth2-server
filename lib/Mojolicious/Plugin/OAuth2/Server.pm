@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.23
+0.24
 
 =head1 SYNOPSIS
 
@@ -95,7 +95,7 @@ use base qw/ Mojolicious::Plugin /;
 use Mojo::URL;
 use Net::OAuth2::AuthorizationServer;
 
-our $VERSION = '0.23';
+our $VERSION = '0.24';
 
 my $args_as_hash;
 my $Grant;
