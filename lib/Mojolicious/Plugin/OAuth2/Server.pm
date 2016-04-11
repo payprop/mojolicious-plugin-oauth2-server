@@ -269,7 +269,6 @@ sub register {
       my @scopes = @_;
       $Grant->legacy_args( $c ) if ! $args_as_hash;
       my @res = $Grant->verify_token_and_scope(
-        is_refresh_token => 0,
         scopes           => [ @scopes ],
         auth_header      => $c->req->headers->header( 'Authorization' ),
         mojo_controller  => $c,
@@ -282,14 +281,14 @@ sub register {
 sub _authorization_request {
   my ( $self ) = @_;
 
-  my ( $c_id,$url,$type,$scope,$state )
+  my ( $client_id,$uri,$type,$scope,$state )
     = map { $self->param( $_ ) // undef }
     qw/ client_id redirect_uri response_type scope state /;
 
   my @scopes = $scope ? split( / /,$scope ) : ();
 
   if (
-    ! defined( $c_id )
+    ! defined( $client_id )
     or ! defined( $type )
     or $type ne 'code'
   ) {
@@ -308,9 +307,9 @@ sub _authorization_request {
 
   $Grant->legacy_args( $self ) if ! $args_as_hash;
 
-  my $uri = Mojo::URL->new( $url );
+  my $mojo_url = Mojo::URL->new( $uri );
   my ( $res,$error ) = $Grant->verify_client(
-    client_id       => $c_id,
+    client_id       => $client_id,
     scopes          => [ @scopes ],
     mojo_controller => $self,
   );
@@ -323,7 +322,7 @@ sub _authorization_request {
     } else {
       $self->app->log->debug( "OAuth2::Server: Resource owner is logged in" );
       $res = $Grant->confirm_by_resource_owner(
-        client_id       => $c_id,
+        client_id       => $client_id,
         scopes          => [ @scopes ],
         mojo_controller => $self,
       );
@@ -341,44 +340,44 @@ sub _authorization_request {
 
   if ( $res ) {
 
-    $self->app->log->debug( "OAuth2::Server: Generating auth code for $c_id" );
+    $self->app->log->debug( "OAuth2::Server: Generating auth code for $client_id" );
     my $auth_code = $Grant->token(
-      client_id       => $c_id,
+      client_id       => $client_id,
       scopes          => [ @scopes ],
       type            => 'auth',
-      redirect_uri    => $url,
+      redirect_uri    => $uri,
     );
 
     $Grant->store_auth_code(
       auth_code       => $auth_code,
-      client_id       => $c_id,
+      client_id       => $client_id,
       expires_in      => $Grant->auth_code_ttl,
-      redirect_uri    => $url,
+      redirect_uri    => $uri,
       scopes          => [ @scopes ],
       mojo_controller => $self,
     );
 
-    $uri->query->append( code  => $auth_code );
+    $mojo_url->query->append( code  => $auth_code );
 
   } elsif ( $error ) {
-    $uri->query->append( error => $error );
+    $mojo_url->query->append( error => $error );
   } else {
     # callback has not returned anything, assume server error
-    $uri->query->append(
+    $mojo_url->query->append(
       error             => 'server_error',
       error_description => 'call to verify_client returned unexpected value',
     );
   }
 
-  $uri->query->append( state => $state ) if defined( $state );
+  $mojo_url->query->append( state => $state ) if defined( $state );
 
-  $self->redirect_to( $uri );
+  $self->redirect_to( $mojo_url );
 }
 
 sub _access_token_request {
   my ( $self ) = @_;
 
-  my ( $client_id,$client_secret,$grant_type,$auth_code,$url,$refresh_token )
+  my ( $client_id,$client_secret,$grant_type,$auth_code,$uri,$refresh_token )
     = map { $self->param( $_ ) // undef }
     qw/ client_id client_secret grant_type code redirect_uri refresh_token /;
 
@@ -386,7 +385,7 @@ sub _access_token_request {
     ! defined( $grant_type )
     or ( $grant_type ne 'authorization_code' and $grant_type ne 'refresh_token' )
     or ( $grant_type eq 'authorization_code' and ! defined( $auth_code ) )
-    or ( $grant_type eq 'authorization_code' and ! defined( $url ) )
+    or ( $grant_type eq 'authorization_code' and ! defined( $uri ) )
   ) {
     $self->render(
       status => 400,
@@ -410,7 +409,7 @@ sub _access_token_request {
 
   if ( $grant_type eq 'refresh_token' ) {
     ( $client,$error,$scope,$user_id ) = $Grant->verify_token_and_scope(
-      is_refresh_token => $refresh_token,
+      refresh_token    => $refresh_token,
       auth_header      => $self->req->headers->header( 'Authorization' ),
       mojo_controller  => $self,
     );
@@ -421,7 +420,7 @@ sub _access_token_request {
       client_id       => $client_id,
       client_secret   => $client_secret,
       auth_code       => $auth_code,
-      redirect_uri    => $url,
+      redirect_uri    => $uri,
       mojo_controller => $self,
     );
   }
