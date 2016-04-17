@@ -11,14 +11,14 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.24
+0.25
 
 =head1 SYNOPSIS
 
   use Mojolicious::Lite;
 
   plugin 'OAuth2::Server' => {
-      ... # see SYNOPSIS in Net::OAuth2::AuthorizationServer::AuthorizationCodeGrant
+      ... # see SYNOPSIS in Net::OAuth2::AuthorizationServer::Manual
   };
 
   group {
@@ -82,6 +82,10 @@ at L<http://tools.ietf.org/html/rfc6749#section-4.1>. It is not a complete
 implementation of RFC6749, as that is rather large in scope. However the extra
 functionality and flows may be added in the future.
 
+The "Resource Owner Password Credentials Grant" is also implmented, for which
+you must pass a hash of users and a jwt_secret. I would advice against using
+this grant flow however, it has merely been added for completion.
+
 The bulk of the functionality is implemented in the L<Net::OAuth2::AuthorizationServer>
 distribution, you should see that for more comprehensive documentation and
 examples of usage.
@@ -94,11 +98,12 @@ use base qw/ Mojolicious::Plugin /;
 
 use Mojo::URL;
 use Net::OAuth2::AuthorizationServer;
+use Carp qw/ croak /;
 
-our $VERSION = '0.24';
+our $VERSION = '0.25';
 
 my $args_as_hash;
-my $Grant;
+my ( $AuthCodeGrant,$PasswordGrant,$Grant );
 
 =head1 METHODS
 
@@ -142,9 +147,27 @@ sub register {
   my $atoken_route = $config->{access_token_route} // '/oauth/access_token';
   $args_as_hash    = $config->{args_as_hash}       // 0; # zero for back compat
 
-  $Grant = Net::OAuth2::AuthorizationServer->new->auth_code_grant(
+  if ( $config->{users} && ! $config->{jwt_secret} ) {
+    croak "You MUST provide a jwt_secret to use the password grant (users supplied)";
+  }
+
+  my $Server = Net::OAuth2::AuthorizationServer->new;
+
+  # note that access_tokens and refresh_tokens will not be shared between
+  # the AuthCodeGrant and PasswordGrant objects, so if you need to support
+  # both then you *must* either supply a jwt_secret or supply callbacks
+  $AuthCodeGrant = $Server->auth_code_grant(
     ( map { +"${_}_cb" => ( $config->{$_} // undef ) } qw/
       verify_client store_auth_code verify_auth_code
+      store_access_token verify_access_token
+      login_resource_owner confirm_by_resource_owner
+    / ),
+    %{ $config },
+  );
+
+  $PasswordGrant = $Server->password_grant(
+    ( map { +"${_}_cb" => ( $config->{$_} // undef ) } qw/
+      verify_client verify_user_password
       store_access_token verify_access_token
       login_resource_owner confirm_by_resource_owner
     / ),
@@ -163,6 +186,7 @@ sub register {
     oauth => sub {
       my $c = shift;
       my @scopes = @_;
+      $Grant = $AuthCodeGrant;
       $Grant->legacy_args( $c ) if ! $args_as_hash;
       my @res = $Grant->verify_token_and_scope(
         scopes           => [ @scopes ],
@@ -201,6 +225,7 @@ sub _authorization_request {
     return;
   }
 
+  $Grant = $AuthCodeGrant;
   $Grant->legacy_args( $self ) if ! $args_as_hash;
 
   my $mojo_url = Mojo::URL->new( $uri );
@@ -273,13 +298,33 @@ sub _authorization_request {
 sub _access_token_request {
   my ( $self ) = @_;
 
-  my ( $client_id,$client_secret,$grant_type,$auth_code,$uri,$refresh_token )
-    = map { $self->param( $_ ) // undef }
-    qw/ client_id client_secret grant_type code redirect_uri refresh_token /;
+  my (
+    $client_id,$client_secret,$grant_type,$auth_code,$uri,
+    $refresh_token,$username,$password
+  ) = map { $self->param( $_ ) // undef } qw/
+    client_id client_secret grant_type code redirect_uri
+    refresh_token username password
+  /;
+
+  $grant_type //='';
 
   if (
-    ! defined( $grant_type )
-    or ( $grant_type ne 'authorization_code' and $grant_type ne 'refresh_token' )
+    $grant_type eq 'password'
+  ) {
+    if ( ! $username && ! $password ) {
+      $self->render(
+        status => 400,
+        json   => {
+          error             => 'invalid_request',
+          error_description => 'the request was missing one of: '
+            . 'client_id, client_secret, username, password',
+          error_uri         => '',
+        }
+      );
+      return;
+    }
+  } elsif (
+    ( $grant_type ne 'authorization_code' and $grant_type ne 'refresh_token' )
     or ( $grant_type eq 'authorization_code' and ! defined( $auth_code ) )
     or ( $grant_type eq 'authorization_code' and ! defined( $uri ) )
   ) {
@@ -301,6 +346,8 @@ sub _access_token_request {
   my $status        = 400;
   my ( $client,$error,$scope,$old_refresh_token,$user_id );
 
+  $Grant = $grant_type eq 'password' ? $PasswordGrant : $AuthCodeGrant;
+
   $Grant->legacy_args( $self ) if ! $args_as_hash;
 
   if ( $grant_type eq 'refresh_token' ) {
@@ -310,8 +357,17 @@ sub _access_token_request {
       mojo_controller  => $self,
     );
     $old_refresh_token = $refresh_token;
-  } else {
 
+  } elsif ( $grant_type eq 'password' ) {
+    ( $client,$error,$scope,$user_id ) = $Grant->verify_user_password(
+      client_id       => $client_id,
+      client_secret   => $client_secret,
+      username        => $username,
+      password        => $password,
+      mojo_controller => $self,
+      scopes          => $self->every_param( 'scope' ),
+    );
+  } else {
     ( $client,$error,$scope,$user_id ) = $Grant->verify_auth_code(
       client_id       => $client_id,
       client_secret   => $client_secret,
@@ -323,7 +379,7 @@ sub _access_token_request {
 
   if ( $client ) {
 
-    $self->app->log->debug( "OAuth2::Server: Generating access token for $client" );
+    $self->app->log->debug( "OAuth2::Server: Generating access token for @{[ ref $client ? $client->{client} : $client ]}" );
 
     my $expires_in    = $Grant->access_token_ttl;
     my $access_token  = $Grant->token(
@@ -342,7 +398,7 @@ sub _access_token_request {
 
     $Grant->store_access_token(
       client_id         => $client,
-      auth_code         => $auth_code,
+      ( $grant_type ne 'password' ? ( auth_code => $auth_code ) : () ),
       access_token      => $access_token,
       refresh_token     => $refresh_token,
       expires_in        => $expires_in,
@@ -363,9 +419,10 @@ sub _access_token_request {
       $json_response->{error} = $error;
   } else {
     # callback has not returned anything, assume server error
+    my $method = $grant_type eq 'password' ? 'verify_user_password' : 'verify_auth_code';
     $json_response = {
       error             => 'server_error',
-      error_description => 'call to verify_auth_code returned unexpected value',
+      error_description => "call to $method returned unexpected value",
     };
   }
 
@@ -393,7 +450,7 @@ This library is free software; you can redistribute it and/or modify it under
 the same terms as Perl itself. If you would like to contribute documentation
 or file a bug report then please raise an issue / pull request:
 
-    https://github.com/G3S/net-oauth2-authorizationserver
+    https://github.com/G3S/mojolicious-plugin-oauth2-server
 
 =cut
 

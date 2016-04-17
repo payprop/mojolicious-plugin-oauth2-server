@@ -11,6 +11,7 @@ use Test::Mojo;
 sub run {
   my ( $args ) = @_;
 
+  my $grant_type  = $args->{grant_type}         // 'authorization_code';
   my $auth_route  = $args->{authorize_route}    // '/oauth/authorize';
   my $token_route = $args->{access_token_route} // '/oauth/access_token';
 
@@ -25,63 +26,73 @@ sub run {
 
   # now the testing begins
   my $t = Test::Mojo->new;
-  note( "authorization request" );
+  my $auth_code;
 
-  note( " ... not authorized (missing params)" );
-  foreach my $form_params (
-    { response_type => 'code', },
-    { client_id     => 1 },
-  ) {
-    $t->get_ok( $auth_route => form => $form_params )
-      ->status_is( 400 )
-      ->json_is( {
-        error => 'invalid_request',
-        error_description => 'the request was missing one of: client_id, '
-          . 'response_type;'
-          . 'or response_type did not equal "code"',
-        error_uri         => '',
-      } )
-    ;
-  }
+  if ( $grant_type eq 'authorization_code' ) {
+    note( "authorization request" );
 
-  note( " ... not authorized (errors)" );
+    note( " ... not authorized (missing params)" );
+    foreach my $form_params (
+      { response_type => 'code', },
+      { client_id     => 1 },
+    ) {
+      $t->get_ok( $auth_route => form => $form_params )
+        ->status_is( 400 )
+        ->json_is( {
+          error => 'invalid_request',
+          error_description => 'the request was missing one of: client_id, '
+            . 'response_type;'
+            . 'or response_type did not equal "code"',
+          error_uri         => '',
+        } )
+      ;
+    }
 
-  foreach my $invalid_params (
-    { client_id     => 2,       error => 'unauthorized_client', },
-    { scope         => 'cry',   error => 'invalid_scope', },
-    { scope         => 'drink', error => 'access_denied', },
-  ) {
-    my $expected_error = delete( $invalid_params->{error} );
-    $t->get_ok( $auth_route => form => {
-        %valid_auth_params, %{ $invalid_params }
-      } )
+    note( " ... not authorized (errors)" );
+
+    foreach my $invalid_params (
+      { client_id     => 2,       error => 'unauthorized_client', },
+      { scope         => 'cry',   error => 'invalid_scope', },
+      { scope         => 'drink', error => 'access_denied', },
+    ) {
+      my $expected_error = delete( $invalid_params->{error} );
+      $t->get_ok( $auth_route => form => {
+          %valid_auth_params, %{ $invalid_params }
+        } )
+        ->status_is( 302 )
+      ;
+
+      my $location = Mojo::URL->new( $t->tx->res->headers->location );
+      is( $location->path,'/cb','redirect to right place' );
+      ok( ! $location->query->param( 'code' ),'no code' );
+      is( $location->query->param( 'error' ),$expected_error,'expected error' );
+    }
+
+    $t->get_ok( $auth_route => form => \%valid_auth_params )
       ->status_is( 302 )
     ;
 
+    note( " ... authorized" );
     my $location = Mojo::URL->new( $t->tx->res->headers->location );
     is( $location->path,'/cb','redirect to right place' );
-    ok( ! $location->query->param( 'code' ),'no code' );
-    is( $location->query->param( 'error' ),$expected_error,'expected error' );
+    ok( $auth_code = $location->query->param( 'code' ),'includes code' );
+    is( $location->query->param( 'state' ),'queasy','includes state' );
   }
-
-  $t->get_ok( $auth_route => form => \%valid_auth_params )
-    ->status_is( 302 )
-  ;
-
-  note( " ... authorized" );
-  my $location = Mojo::URL->new( $t->tx->res->headers->location );
-  is( $location->path,'/cb','redirect to right place' );
-  ok( my $auth_code = $location->query->param( 'code' ),'includes code' );
-  is( $location->query->param( 'state' ),'queasy','includes state' );
 
   note( "access token" );
 
   my %valid_token_params = (
     client_id     => 1,
     client_secret => 'boo',
-    grant_type    => 'authorization_code',
-    code          => $auth_code,
-    redirect_uri  => $valid_auth_params{redirect_uri},
+    grant_type    => $grant_type,
+    ( $grant_type eq 'authorization_code' ? (
+      code          => $auth_code,
+      redirect_uri  => $valid_auth_params{redirect_uri},
+    ) : (
+      username      => 'bob',
+      password      => 'hey_ho!',
+      scope         => [ qw/ eat / ],
+    ) ),
   );
 
   note( " ... no token (missing params)" );

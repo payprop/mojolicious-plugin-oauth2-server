@@ -11,14 +11,14 @@ Authorization Server / Resource Server with Mojolicious
 
 # VERSION
 
-0.24
+0.25
 
 # SYNOPSIS
 
     use Mojolicious::Lite;
 
     plugin 'OAuth2::Server' => {
-        ... # see SYNOPSIS in Net::OAuth2::AuthorizationServer::AuthorizationCodeGrant
+        ... # see SYNOPSIS in Net::OAuth2::AuthorizationServer::Manual
     };
 
     group {
@@ -82,6 +82,10 @@ at [http://tools.ietf.org/html/rfc6749#section-4.1](http://tools.ietf.org/html/r
 implementation of RFC6749, as that is rather large in scope. However the extra
 functionality and flows may be added in the future.
 
+The "Resource Owner Password Credentials Grant" is also implmented, for which
+you must pass a hash of users and a jwt\_secret. I would advice against using
+this grant flow however, it has merely been added for completion.
+
 The bulk of the functionality is implemented in the [Net::OAuth2::AuthorizationServer](https://metacpan.org/pod/Net::OAuth2::AuthorizationServer)
 distribution, you should see that for more comprehensive documentation and
 examples of usage.
@@ -134,4 +138,4 @@ This library is free software; you can redistribute it and/or modify it under
 the same terms as Perl itself. If you would like to contribute documentation
 or file a bug report then please raise an issue / pull request:
 
-    https://github.com/G3S/net-oauth2-authorizationserver
+    https://github.com/G3S/mojolicious-plugin-oauth2-server
