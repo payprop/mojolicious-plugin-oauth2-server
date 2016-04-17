@@ -17,4 +17,5 @@ t/050_jwt.t
 t/060_jwt_with_revoke.t
 t/070_overrides_hash_args.t
 t/080_password_grant_basic.t
+t/090_password_grant_overrides.t
 t/AllTests.pm
