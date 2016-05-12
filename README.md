@@ -5,8 +5,8 @@ Authorization Server / Resource Server with Mojolicious
 
 <div>
 
-    <a href='https://travis-ci.org/G3S/mojolicious-plugin-oauth2-server?branch=master'><img src='https://travis-ci.org/G3S/mojolicious-plugin-oauth2-server.svg?branch=master' alt='Build Status' /></a>
-    <a href='https://coveralls.io/r/G3S/mojolicious-plugin-oauth2-server?branch=master'><img src='https://coveralls.io/repos/G3S/mojolicious-plugin-oauth2-server/badge.png?branch=master' alt='Coverage Status' /></a>
+    <a href='https://travis-ci.org/Humanstate/mojolicious-plugin-oauth2-server?branch=master'><img src='https://travis-ci.org/Humanstate/mojolicious-plugin-oauth2-server.svg?branch=master' alt='Build Status' /></a>
+    <a href='https://coveralls.io/r/Humanstate/mojolicious-plugin-oauth2-server?branch=master'><img src='https://coveralls.io/repos/Humanstate/mojolicious-plugin-oauth2-server/badge.png?branch=master' alt='Coverage Status' /></a>
 </div>
 
 # VERSION
@@ -138,4 +138,4 @@ This library is free software; you can redistribute it and/or modify it under
 the same terms as Perl itself. If you would like to contribute documentation
 or file a bug report then please raise an issue / pull request:
 
-    https://github.com/G3S/mojolicious-plugin-oauth2-server
+    https://github.com/Humanstate/mojolicious-plugin-oauth2-server
