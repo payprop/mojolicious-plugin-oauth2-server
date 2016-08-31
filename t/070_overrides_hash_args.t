@@ -17,6 +17,7 @@ my $verify_client_sub = sub {
   return ( 0,'invalid_scope' ) if grep { $_ eq 'cry' } @{ $args{scopes} // [] };
   return ( 0,'access_denied' ) if grep { $_ eq 'drink' } @{ $args{scopes} // [] };
   return ( 0,'unauthorized_client' ) if $args{client_id} ne '1';
+  return ( 0,'unauthorized_client' ) if $args{response_type} ne 'code';
 
   # all good
   return ( 1,undef );

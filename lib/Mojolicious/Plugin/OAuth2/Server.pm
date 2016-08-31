@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.27
+0.28
 
 =head1 SYNOPSIS
 
@@ -103,7 +103,7 @@ use Mojo::URL;
 use Net::OAuth2::AuthorizationServer;
 use Carp qw/ croak /;
 
-our $VERSION = '0.27';
+our $VERSION = '0.28';
 
 my $args_as_hash;
 my ( $AuthCodeGrant,$PasswordGrant,$ImplicitGrant,$Grant );
@@ -244,6 +244,7 @@ sub _authorization_request {
     redirect_uri    => $uri,
     scopes          => [ @scopes ],
     mojo_controller => $self,
+    response_type   => $type,
   );
 
   if ( $res ) {

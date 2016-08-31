@@ -71,6 +71,24 @@ sub run {
       is( $location->query->param( 'error' ),$expected_error,'expected error' );
     }
 
+    if ( $grant_type eq 'authorization_code' ) {
+      # check this is enforced, i.e. we can't use implicit grant by
+      # sending "token" rather than "code"
+      my %force_implicit_grant = %valid_auth_params;
+      delete( $force_implicit_grant{client_secret} );
+      $force_implicit_grant{response_type} = 'token';
+
+      $t->get_ok( $auth_route => form => \%force_implicit_grant )
+        ->status_is( 302 )
+      ;
+
+      my $location = Mojo::URL->new( $t->tx->res->headers->location );
+      is( $location->path,'/cb','redirect to right place' );
+      ok( ! $location->query->param( 'code' ),'no code' );
+      ok( ! $location->query->param( 'access_token' ),'no code' );
+      is( $location->query->param( 'error' ),'unauthorized_client','expected error' );
+    }
+
     $t->get_ok( $auth_route => form => \%valid_auth_params )
       ->status_is( 302 )
     ;

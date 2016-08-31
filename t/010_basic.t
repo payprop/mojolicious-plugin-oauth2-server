@@ -14,6 +14,7 @@ MOJO_APP: {
   plugin 'OAuth2::Server' => {
     clients              => {
       1 => {
+        # client secret implies authorization code grant
         client_secret => 'boo',
         scopes        => {
           eat       => 1,
