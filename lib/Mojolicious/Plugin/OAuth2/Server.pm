@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.28
+0.29
 
 =head1 SYNOPSIS
 
@@ -103,7 +103,7 @@ use Mojo::URL;
 use Net::OAuth2::AuthorizationServer;
 use Carp qw/ croak /;
 
-our $VERSION = '0.28';
+our $VERSION = '0.29';
 
 my $args_as_hash;
 my ( $AuthCodeGrant,$PasswordGrant,$ImplicitGrant,$Grant );
@@ -180,6 +180,7 @@ sub register {
   $ImplicitGrant = $Server->implicit_grant(
     ( map { +"${_}_cb" => ( $config->{$_} // undef ) } qw/
       verify_client store_access_token verify_access_token
+      login_resource_owner confirm_by_resource_owner
     / ),
     %{ $config },
   );

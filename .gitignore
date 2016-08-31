@@ -10,3 +10,4 @@ blib
 cover_db
 pm_to_blib
 examples/data/
+.DS_Store

@@ -1,5 +1,9 @@
 Revision history for Mojolicious-Plugin-OAuth2-Server
 
+0.29     2016-08-31
+        - Fix Implicit Grant needs to be able to support login_resource_owner and
+          confirm_by_resource_owner callbacks
+
 0.28     2016-08-31
         - Fix don't allow clients defined with a client_secret to use the Implicit
           Grant Flow (handled in Net::OAuth2::AuthorizationServer, but add tests here)
