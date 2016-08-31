@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 # VERSION
 
-0.26
+0.27
 
 # SYNOPSIS
 
@@ -85,6 +85,9 @@ functionality and flows may be added in the future.
 The "Resource Owner Password Credentials Grant" is also implmented, for which
 you must pass a hash of users and a jwt\_secret. I would advice against using
 this grant flow however, it has merely been added for completion.
+
+The "Implicit Grant" flow is also implemented by passing the response type of
+"token" to the autorization route.
 
 The bulk of the functionality is implemented in the [Net::OAuth2::AuthorizationServer](https://metacpan.org/pod/Net::OAuth2::AuthorizationServer)
 distribution, you should see that for more comprehensive documentation and

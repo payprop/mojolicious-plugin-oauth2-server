@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.26
+0.27
 
 =head1 SYNOPSIS
 
@@ -86,6 +86,9 @@ The "Resource Owner Password Credentials Grant" is also implmented, for which
 you must pass a hash of users and a jwt_secret. I would advice against using
 this grant flow however, it has merely been added for completion.
 
+The "Implicit Grant" flow is also implemented by passing the response type of
+"token" to the autorization route.
+
 The bulk of the functionality is implemented in the L<Net::OAuth2::AuthorizationServer>
 distribution, you should see that for more comprehensive documentation and
 examples of usage.
@@ -100,10 +103,10 @@ use Mojo::URL;
 use Net::OAuth2::AuthorizationServer;
 use Carp qw/ croak /;
 
-our $VERSION = '0.26';
+our $VERSION = '0.27';
 
 my $args_as_hash;
-my ( $AuthCodeGrant,$PasswordGrant,$Grant );
+my ( $AuthCodeGrant,$PasswordGrant,$ImplicitGrant,$Grant );
 
 =head1 METHODS
 
@@ -154,7 +157,7 @@ sub register {
   my $Server = Net::OAuth2::AuthorizationServer->new;
 
   # note that access_tokens and refresh_tokens will not be shared between
-  # the AuthCodeGrant and PasswordGrant objects, so if you need to support
+  # the various grant type objects, so if you need to support
   # both then you *must* either supply a jwt_secret or supply callbacks
   $AuthCodeGrant = $Server->auth_code_grant(
     ( map { +"${_}_cb" => ( $config->{$_} // undef ) } qw/
@@ -170,6 +173,13 @@ sub register {
       verify_client verify_user_password
       store_access_token verify_access_token
       login_resource_owner confirm_by_resource_owner
+    / ),
+    %{ $config },
+  );
+
+  $ImplicitGrant = $Server->implicit_grant(
+    ( map { +"${_}_cb" => ( $config->{$_} // undef ) } qw/
+      verify_client store_access_token verify_access_token
     / ),
     %{ $config },
   );
@@ -210,7 +220,7 @@ sub _authorization_request {
   if (
     ! defined( $client_id )
     or ! defined( $type )
-    or $type ne 'code'
+    or $type !~ /^(code|token)$/
   ) {
     $self->render(
       status => 400,
@@ -218,24 +228,26 @@ sub _authorization_request {
         error             => 'invalid_request',
         error_description => 'the request was missing one of: client_id, '
           . 'response_type;'
-          . 'or response_type did not equal "code"',
+          . 'or response_type did not equal "code" or "token"',
         error_uri         => '',
       }
     );
     return;
   }
 
-  $Grant = $AuthCodeGrant;
+  $Grant = $type eq 'token' ? $ImplicitGrant : $AuthCodeGrant;
   $Grant->legacy_args( $self ) if ! $args_as_hash;
 
   my $mojo_url = Mojo::URL->new( $uri );
   my ( $res,$error ) = $Grant->verify_client(
     client_id       => $client_id,
+    redirect_uri    => $uri,
     scopes          => [ @scopes ],
     mojo_controller => $self,
   );
 
   if ( $res ) {
+
     if ( ! $Grant->login_resource_owner( mojo_controller => $self ) ) {
       $self->app->log->debug( "OAuth2::Server: Resource owner not logged in" );
       # call to $resource_owner_logged_in method should have called redirect_to
@@ -260,6 +272,9 @@ sub _authorization_request {
   }
 
   if ( $res ) {
+
+    return _maybe_generate_access_token( $self,$mojo_url,$client_id,$scope,$state )
+      if $type eq 'token';
 
     $self->app->log->debug( "OAuth2::Server: Generating auth code for $client_id" );
     my $auth_code = $Grant->token(
@@ -291,6 +306,25 @@ sub _authorization_request {
   }
 
   $mojo_url->query->append( state => $state ) if defined( $state );
+
+  $self->redirect_to( $mojo_url );
+}
+
+sub _maybe_generate_access_token {
+  my ( $self,$mojo_url,$client,$scope,$state ) = @_;
+
+  my $access_token  = $Grant->token(
+    client_id  => $client,
+    scopes     => $scope,
+    type       => 'access',
+  );
+
+  # http://example.com/cb#access_token=2YotnFZFEjr1zCsicMWpAA
+  #     &state=xyz&token_type=example&expires_in=3600
+  $mojo_url->query->append( access_token => $access_token );
+  $mojo_url->query->append( state => $state ) if defined( $state );
+  $mojo_url->query->append( token_type => 'bearer' );
+  $mojo_url->query->append( expires_in => $Grant->access_token_ttl );
 
   $self->redirect_to( $mojo_url );
 }

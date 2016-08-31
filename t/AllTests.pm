@@ -18,7 +18,7 @@ sub run {
   my %valid_auth_params = (
     client_id     => 1,
     client_secret => 'boo',
-    response_type => 'code',
+    response_type => $grant_type eq 'token' ? 'token' : 'code',
     redirect_uri  => 'https://client/cb',
     scope         => 'eat',
     state         => 'queasy',
@@ -28,12 +28,15 @@ sub run {
   my $t = Test::Mojo->new;
   my $auth_code;
 
-  if ( $grant_type eq 'authorization_code' ) {
+  if ( $grant_type =~ /(authorization_code|token)/ ) {
+
+    my $response_type = $grant_type eq 'token' ? 'token' : 'code';
+
     note( "authorization request" );
 
     note( " ... not authorized (missing params)" );
     foreach my $form_params (
-      { response_type => 'code', },
+      { response_type => $response_type, },
       { client_id     => 1 },
     ) {
       $t->get_ok( $auth_route => form => $form_params )
@@ -42,7 +45,7 @@ sub run {
           error => 'invalid_request',
           error_description => 'the request was missing one of: client_id, '
             . 'response_type;'
-            . 'or response_type did not equal "code"',
+            . 'or response_type did not equal "code" or "token"',
           error_uri         => '',
         } )
       ;
@@ -75,9 +78,17 @@ sub run {
     note( " ... authorized" );
     my $location = Mojo::URL->new( $t->tx->res->headers->location );
     is( $location->path,'/cb','redirect to right place' );
-    ok( $auth_code = $location->query->param( 'code' ),'includes code' );
+
+    if ( $response_type eq 'token' ) {
+      ok( $location->query->param( 'access_token' ),'includes access_token' );
+      is( $location->query->param( 'token_type' ),'bearer','includes token_type' );
+    } else {
+      ok( $auth_code = $location->query->param( 'code' ),'includes code' );
+    }
     is( $location->query->param( 'state' ),'queasy','includes state' );
   }
+
+  return if $grant_type eq 'token';
 
   note( "access token" );
 
