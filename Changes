@@ -1,5 +1,12 @@
 Revision history for Mojolicious-Plugin-OAuth2-Server
 
+0.30     2016-09-16
+        - add "Client Credentials Grant" flow (response_type = "client_credentials"
+          in call to access_token)
+        - Improve test coverage for Implicit Grant
+        - Fix setting of scopes for JWT in Implicit Grant revealed by improved test
+          coverage
+
 0.29     2016-08-31
         - Fix Implicit Grant needs to be able to support login_resource_owner and
           confirm_by_resource_owner callbacks

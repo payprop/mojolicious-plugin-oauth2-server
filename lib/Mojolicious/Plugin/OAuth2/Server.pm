@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.29
+0.30
 
 =head1 SYNOPSIS
 
@@ -77,21 +77,17 @@ Then in your controller:
 
 =head1 DESCRIPTION
 
-This plugin implements the OAuth2 "Authorization Code Grant" flow as described
-at L<http://tools.ietf.org/html/rfc6749#section-4.1>. It is not a complete
-implementation of RFC6749, as that is rather large in scope. However the extra
-functionality and flows may be added in the future.
-
-The "Resource Owner Password Credentials Grant" is also implmented, for which
-you must pass a hash of users and a jwt_secret. I would advice against using
-this grant flow however, it has merely been added for completion.
-
-The "Implicit Grant" flow is also implemented by passing the response type of
-"token" to the autorization route.
+This plugin implements the various OAuth2 grant types flow as described at
+L<http://tools.ietf.org/html/rfc6749>. It is a complete implementation of
+RFC6749, with the exception of the "Extension Grants" as the description of
+that grant type is rather hand-wavy.
 
 The bulk of the functionality is implemented in the L<Net::OAuth2::AuthorizationServer>
 distribution, you should see that for more comprehensive documentation and
 examples of usage.
+
+The examples here use the "Authorization Code Grant" flow as that is considered
+the most secure and most complete form of OAuth2.
 
 =cut
 
@@ -100,13 +96,14 @@ use warnings;
 use base qw/ Mojolicious::Plugin /;
 
 use Mojo::URL;
+use Mojo::Util qw/ b64_decode /;
 use Net::OAuth2::AuthorizationServer;
 use Carp qw/ croak /;
 
-our $VERSION = '0.29';
+our $VERSION = '0.30';
 
 my $args_as_hash;
-my ( $AuthCodeGrant,$PasswordGrant,$ImplicitGrant,$Grant );
+my ( $AuthCodeGrant,$PasswordGrant,$ImplicitGrant,$ClientCredentialsGrant,$Grant );
 
 =head1 METHODS
 
@@ -181,6 +178,13 @@ sub register {
     ( map { +"${_}_cb" => ( $config->{$_} // undef ) } qw/
       verify_client store_access_token verify_access_token
       login_resource_owner confirm_by_resource_owner
+    / ),
+    %{ $config },
+  );
+
+  $ClientCredentialsGrant = $Server->client_credentials_grant(
+    ( map { +"${_}_cb" => ( $config->{$_} // undef ) } qw/
+      verify_client store_access_token verify_access_token
     / ),
     %{ $config },
   );
@@ -275,8 +279,8 @@ sub _authorization_request {
 
   if ( $res ) {
 
-    return _maybe_generate_access_token( $self,$mojo_url,$client_id,$scope,$state )
-      if $type eq 'token';
+    return _maybe_generate_access_token( $self,$mojo_url,$client_id,[ @scopes ],$state )
+      if $type eq 'token'; # implicit grant
 
     $self->app->log->debug( "OAuth2::Server: Generating auth code for $client_id" );
     my $auth_code = $Grant->token(
@@ -321,6 +325,14 @@ sub _maybe_generate_access_token {
     type       => 'access',
   );
 
+  $Grant->store_access_token(
+    client_id         => $client,
+    access_token      => $access_token,
+    expires_in        => $Grant->access_token_ttl,
+    scopes            => $scope,
+    mojo_controller   => $self,
+  );
+
   # http://example.com/cb#access_token=2YotnFZFEjr1zCsicMWpAA
   #     &state=xyz&token_type=example&expires_in=3600
   $mojo_url->query->append( access_token => $access_token );
@@ -344,74 +356,23 @@ sub _access_token_request {
 
   $grant_type //='';
 
-  if (
-    $grant_type eq 'password'
-  ) {
-    if ( ! $username && ! $password ) {
-      $self->render(
-        status => 400,
-        json   => {
-          error             => 'invalid_request',
-          error_description => 'the request was missing one of: '
-            . 'client_id, client_secret, username, password',
-          error_uri         => '',
-        }
-      );
-      return;
-    }
-  } elsif (
-    ( $grant_type ne 'authorization_code' and $grant_type ne 'refresh_token' )
-    or ( $grant_type eq 'authorization_code' and ! defined( $auth_code ) )
-    or ( $grant_type eq 'authorization_code' and ! defined( $uri ) )
-  ) {
-    $self->render(
-      status => 400,
-      json   => {
-        error             => 'invalid_request',
-        error_description => 'the request was missing one of: grant_type, '
-          . 'client_id, client_secret, code, redirect_uri;'
-          . 'or grant_type did not equal "authorization_code" '
-          . 'or "refresh_token"',
-        error_uri         => '',
-      }
-    );
-    return;
-  }
+  _access_token_request_check_params(
+    $self,$grant_type,$username,$password,$auth_code,$uri
+  ) || return;
 
   my $json_response = {};
   my $status        = 400;
-  my ( $client,$error,$scope,$old_refresh_token,$user_id );
 
-  $Grant = $grant_type eq 'password' ? $PasswordGrant : $AuthCodeGrant;
+  $Grant = $grant_type eq 'password'
+    ? $PasswordGrant : $grant_type eq 'client_credentials'
+    ? $ClientCredentialsGrant : $AuthCodeGrant;
 
   $Grant->legacy_args( $self ) if ! $args_as_hash;
 
-  if ( $grant_type eq 'refresh_token' ) {
-    ( $client,$error,$scope,$user_id ) = $Grant->verify_token_and_scope(
-      refresh_token    => $refresh_token,
-      auth_header      => $self->req->headers->header( 'Authorization' ),
-      mojo_controller  => $self,
-    );
-    $old_refresh_token = $refresh_token;
-
-  } elsif ( $grant_type eq 'password' ) {
-    ( $client,$error,$scope,$user_id ) = $Grant->verify_user_password(
-      client_id       => $client_id,
-      client_secret   => $client_secret,
-      username        => $username,
-      password        => $password,
-      mojo_controller => $self,
-      scopes          => $self->every_param( 'scope' ),
-    );
-  } else {
-    ( $client,$error,$scope,$user_id ) = $Grant->verify_auth_code(
-      client_id       => $client_id,
-      client_secret   => $client_secret,
-      auth_code       => $auth_code,
-      redirect_uri    => $uri,
-      mojo_controller => $self,
-    );
-  }
+  my ( $client,$error,$scope,$user_id,$old_refresh_token ) = _verify_credentials(
+    $self,$Grant,$grant_type,$refresh_token,$client_id,$client_secret,
+    $auth_code,$username,$password,$uri
+  );
 
   if ( $client ) {
 
@@ -436,10 +397,15 @@ sub _access_token_request {
       client_id         => $client,
       ( $grant_type ne 'password' ? ( auth_code => $auth_code ) : () ),
       access_token      => $access_token,
-      refresh_token     => $refresh_token,
       expires_in        => $expires_in,
       scopes            => $scope,
-      old_refresh_token => $old_refresh_token,
+      ( $grant_type eq 'client_credentials'
+        ? ()
+        : (
+          refresh_token     => $refresh_token,
+          old_refresh_token => $old_refresh_token,
+        )
+      ),
       mojo_controller   => $self,
     );
 
@@ -448,14 +414,20 @@ sub _access_token_request {
       access_token  => $access_token,
       token_type    => 'Bearer',
       expires_in    => $expires_in,
-      refresh_token => $refresh_token,
+      ( $grant_type eq 'client_credentials'
+        ? ()
+        : ( refresh_token => $refresh_token ),
+      )
     };
 
   } elsif ( $error ) {
       $json_response->{error} = $error;
   } else {
     # callback has not returned anything, assume server error
-    my $method = $grant_type eq 'password' ? 'verify_user_password' : 'verify_auth_code';
+    my $method = $grant_type eq 'password'
+      ? 'verify_user_password' : $grant_type eq 'client_credentials'
+      ? 'verify_client' : 'verify_auth_code';
+
     $json_response = {
       error             => 'server_error',
       error_description => "call to $method returned unexpected value",
@@ -469,6 +441,132 @@ sub _access_token_request {
     status => $status,
     json   => $json_response,
   );
+}
+
+sub _access_token_request_check_params {
+  my ( $self,$grant_type,$username,$password,$auth_code,$uri ) = @_;
+
+  if (
+    $grant_type eq 'password'
+  ) {
+    if ( ! $username && ! $password ) {
+      $self->render(
+        status => 400,
+        json   => {
+          error             => 'invalid_request',
+          error_description => 'the request was missing one of: '
+            . 'client_id, client_secret, username, password',
+          error_uri         => '',
+        }
+      );
+      return 0;
+    }
+  } elsif (
+    $grant_type eq 'client_credentials'
+  ) {
+    my ( $client_id,$client_secret ) = _client_credentials_from_header( $self );
+
+    if ( ! $client_id || ! $client_secret ) {
+      $self->render(
+        status => 400,
+        json   => {
+          error             => 'invalid_request',
+          error_description => 'the request was missing an Authorization: Basic'
+            . ' header or it was missing the encoded client_id:client_secret data',
+          error_uri         => '',
+        }
+      );
+      return 0;
+    }
+  } elsif (
+    ( $grant_type ne 'authorization_code' and $grant_type ne 'refresh_token' )
+    or ( $grant_type eq 'authorization_code' and ! defined( $auth_code ) )
+    or ( $grant_type eq 'authorization_code' and ! defined( $uri ) )
+  ) {
+    $self->render(
+      status => 400,
+      json   => {
+        error             => 'invalid_request',
+        error_description => 'the request was missing one of: grant_type, '
+          . 'client_id, client_secret, code, redirect_uri;'
+          . 'or grant_type did not equal "authorization_code" '
+          . 'or "refresh_token"',
+        error_uri         => '',
+      }
+    );
+    return 0;
+  }
+
+  return 1;
+}
+
+sub _client_credentials_from_header {
+  my ( $self ) = @_;
+
+  if ( my $auth_header = $self->req->headers->header( 'Authorization' ) ) {
+    if ( my ( $encoded_details ) = ( split( 'Basic ',$auth_header ) )[1] ) {
+      my $decoded_details = b64_decode( $encoded_details );
+      my ( $client_id,$client_secret ) = split( ':',$decoded_details );
+      return ( $client_id,$client_secret );
+    }
+  }
+}
+
+sub _verify_credentials {
+  my (
+    $self,$Grant,$grant_type,$refresh_token,$client_id,$client_secret,
+    $auth_code,$username,$password,$uri
+  ) = @_;
+
+  my ( $client,$error,$scope,$user_id,$old_refresh_token );
+
+  if ( $grant_type eq 'refresh_token' ) {
+    ( $client,$error,$scope,$user_id ) = $Grant->verify_token_and_scope(
+      refresh_token    => $refresh_token,
+      auth_header      => $self->req->headers->header( 'Authorization' ),
+      mojo_controller  => $self,
+    );
+    $old_refresh_token = $refresh_token;
+
+  } elsif ( $grant_type eq 'password' ) {
+    $scope = $self->every_param( 'scope' );
+
+    ( $client,$error,$scope,$user_id ) = $Grant->verify_user_password(
+      client_id       => $client_id,
+      client_secret   => $client_secret,
+      username        => $username,
+      password        => $password,
+      mojo_controller => $self,
+      scopes          => $scope,
+    );
+  } elsif ( $grant_type eq 'client_credentials' ) {
+
+    my $client_secret;
+
+    ( $client,$client_secret ) = _client_credentials_from_header( $self );
+
+    $scope = $self->every_param( 'scope' );
+    my $res;
+
+    ( $res,$error ) = $Grant->verify_client(
+      client_id       => $client,
+      client_secret   => $client_secret,
+      scopes          => $scope,
+    );
+
+    undef( $client_id ) if ! $res;
+
+  } else {
+    ( $client,$error,$scope,$user_id ) = $Grant->verify_auth_code(
+      client_id       => $client_id,
+      client_secret   => $client_secret,
+      auth_code       => $auth_code,
+      redirect_uri    => $uri,
+      mojo_controller => $self,
+    );
+  }
+
+  return ( $client,$error,$scope,$user_id,$old_refresh_token );
 }
 
 =head1 SEE ALSO

@@ -52,7 +52,7 @@ MOJO_APP: {
   # plugin configuration
   plugin 'OAuth2::Server' => {
     args_as_hash        => 0,
-    authorize_route     => '/o/auth',
+    access_token_route  => '/o/token',
     verify_client       => $verify_client_sub,
     store_access_token  => $store_access_token_sub,
     verify_access_token => $verify_access_token_sub,
@@ -81,8 +81,8 @@ MOJO_APP: {
 };
 
 AllTests::run({
-  authorize_route    => '/o/auth',  
-  grant_type         => 'token',
+  access_token_route => '/o/token',  
+  grant_type         => 'client_credentials',
   skip_revoke_tests  => 1, # there is no auth code
 });
 

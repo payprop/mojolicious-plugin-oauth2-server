@@ -4,6 +4,7 @@ use strict;
 use warnings;
 
 use Mojo::URL;
+use Mojo::Util qw/ b64_encode /;
 use Test::More;
 use Test::Deep;
 use Test::Mojo;
@@ -106,7 +107,27 @@ sub run {
     is( $location->query->param( 'state' ),'queasy','includes state' );
   }
 
-  return if $grant_type eq 'token';
+  if ( $grant_type eq 'token' ) {
+
+    my $location = Mojo::URL->new( $t->tx->res->headers->location );
+    ok( my $access_token = $location->query->param( 'access_token' ),'includes token' );
+
+    note( "don't use access token to access route" );
+    $t->get_ok('/api/eat')->status_is( 401 );
+    $t->get_ok('/api/sleep')->status_is( 401 );
+
+    note( "use access token to access route" );
+
+    $t->ua->on(start => sub {
+      my ( $ua,$tx ) = @_;
+      $tx->req->headers->header( 'Authorization' => "Bearer $access_token" );
+    });
+
+    $t->get_ok('/api/eat')->status_is( 200 );
+    $t->get_ok('/api/sleep')->status_is( 401 );
+
+    return;
+  }
 
   note( "access token" );
 
@@ -156,7 +177,29 @@ sub run {
     ;
   }
 
-  $t->post_ok( $token_route => form => \%valid_token_params )
+  my @post_args;
+
+  if ( $grant_type eq 'client_credentials' ) {
+
+    my %valid_token_params = (
+      grant_type    => $grant_type,
+      scope         => [ qw/ eat / ],
+    );
+
+    my $encoded_client_details = b64_encode( join( ':',1,'boo' ) );
+    chomp( $encoded_client_details );
+
+    @post_args = (
+      $token_route =>
+      { 'Authorization' => "Basic $encoded_client_details" } =>
+      form => \%valid_token_params
+    );
+
+  } else {
+    @post_args = ( $token_route => form => \%valid_token_params );
+  }
+
+  $t->post_ok( @post_args )
     ->status_is( 200 )
     ->header_is( 'Cache-Control' => 'no-store' )
     ->header_is( 'Pragma'        => 'no-cache' )
@@ -168,7 +211,10 @@ sub run {
       access_token  => re( '^.+$' ),
       token_type    => 'Bearer',
       expires_in    => '3600',
-      refresh_token => re( '^.+$' ),
+      ( $grant_type eq 'client_credentials'
+        ? ()
+        : ( refresh_token => re( '^.+$' ) )
+      ),
     },
     'json_is_deeply'
   );
@@ -190,43 +236,45 @@ sub run {
   $t->get_ok('/api/eat')->status_is( 200 );
   $t->get_ok('/api/sleep')->status_is( 401 );
 
-  note( "refresh token cannot access routes" );
+  if ( $grant_type ne 'client_credentials' ) {
+    note( "refresh token cannot access routes" );
 
-  $t->ua->on(start => sub {
-    my ( $ua,$tx ) = @_;
-    $tx->req->headers->header( 'Authorization' => "Bearer $refresh_token" );
-  });
+    $t->ua->on(start => sub {
+      my ( $ua,$tx ) = @_;
+      $tx->req->headers->header( 'Authorization' => "Bearer $refresh_token" );
+    });
 
-  $t->get_ok('/api/eat')->status_is( 401 );
-  $t->get_ok('/api/sleep')->status_is( 401 );
+    $t->get_ok('/api/eat')->status_is( 401 );
+    $t->get_ok('/api/sleep')->status_is( 401 );
 
-  note( "get a new access token using refresh token" );
+    note( "get a new access token using refresh token" );
 
-  my %valid_refresh_token_params = (
-    grant_type    => 'refresh_token',
-    refresh_token => $refresh_token,
-    scope         => 'eat',
-  );
+    my %valid_refresh_token_params = (
+      grant_type    => 'refresh_token',
+      refresh_token => $refresh_token,
+      scope         => 'eat',
+    );
 
-  $t->post_ok( $token_route => form => \%valid_refresh_token_params )
-    ->status_is( 200 )
-    ->header_is( 'Cache-Control' => 'no-store' )
-    ->header_is( 'Pragma'        => 'no-cache' )
-  ;
+    $t->post_ok( $token_route => form => \%valid_refresh_token_params )
+      ->status_is( 200 )
+      ->header_is( 'Cache-Control' => 'no-store' )
+      ->header_is( 'Pragma'        => 'no-cache' )
+    ;
 
-  cmp_deeply(
-    $t->tx->res->json,
-    {
-      access_token  => re( '^.+$' ),
-      token_type    => 'Bearer',
-      expires_in    => '3600',
-      refresh_token => re( '^.+$' ),
-    },
-    'json_is_deeply'
-  );
+    cmp_deeply(
+      $t->tx->res->json,
+      {
+        access_token  => re( '^.+$' ),
+        token_type    => 'Bearer',
+        expires_in    => '3600',
+        refresh_token => re( '^.+$' ),
+      },
+      'json_is_deeply'
+    );
 
-  isnt( $t->tx->res->json->{access_token},$access_token,'new access_token' );
-  isnt( $t->tx->res->json->{refresh_token},$refresh_token,'new refresh_token' );
+    isnt( $t->tx->res->json->{access_token},$access_token,'new access_token' );
+    isnt( $t->tx->res->json->{refresh_token},$refresh_token,'new refresh_token' );
+  }
 
   return if $args->{skip_revoke_tests};
 

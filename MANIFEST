@@ -20,4 +20,6 @@ t/080_password_grant_basic.t
 t/090_password_grant_overrides.t
 t/100_implicit_grant_basic.t
 t/110_implicit_grant_overrides.t
+t/120_client_credentials_grant_basic.t
+t/130_client_credentials_grant_overrides.t
 t/AllTests.pm
