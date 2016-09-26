@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.30
+0.31
 
 =head1 SYNOPSIS
 
@@ -100,7 +100,7 @@ use Mojo::Util qw/ b64_decode /;
 use Net::OAuth2::AuthorizationServer;
 use Carp qw/ croak /;
 
-our $VERSION = '0.30';
+our $VERSION = '0.31';
 
 my $args_as_hash;
 my ( $AuthCodeGrant,$PasswordGrant,$ImplicitGrant,$ClientCredentialsGrant,$Grant );
@@ -140,12 +140,19 @@ module (C<verify_token_and_scope> method) to validate the access/refresh token.
 
 =cut
 
+my $warned_dep = 0;
+
 sub register {
   my ( $self,$app,$config ) = @_;
 
   my $auth_route   = $config->{authorize_route}    // '/oauth/authorize';
   my $atoken_route = $config->{access_token_route} // '/oauth/access_token';
   $args_as_hash    = $config->{args_as_hash}       // 0; # zero for back compat
+
+  if ( ! $args_as_hash ) {
+    warn "args_as_hash of @{[ __PACKAGE__ ]} is DEPRECATED and will become the standard soon"
+      unless $warned_dep++;
+  }
 
   if ( $config->{users} && ! $config->{jwt_secret} ) {
     croak "You MUST provide a jwt_secret to use the password grant (users supplied)";
