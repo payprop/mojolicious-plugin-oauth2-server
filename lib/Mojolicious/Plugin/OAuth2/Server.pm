@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.31
+0.32
 
 =head1 SYNOPSIS
 
@@ -100,9 +100,8 @@ use Mojo::Util qw/ b64_decode /;
 use Net::OAuth2::AuthorizationServer;
 use Carp qw/ croak /;
 
-our $VERSION = '0.31';
+our $VERSION = '0.32';
 
-my $args_as_hash;
 my ( $AuthCodeGrant,$PasswordGrant,$ImplicitGrant,$ClientCredentialsGrant,$Grant );
 
 =head1 METHODS
@@ -120,11 +119,6 @@ and create a C<auth_code_grant> that can be accessed using the defined
 C<authorize_route> and C<access_token_route>. The arguments passed to the
 plugin are passed straight through to the C<auth_code_grant> method in
 the L<Net::OAuth2::AuthorizationServer> module.
-
-Note to support backwards compatibility arguments will be passed to the
-callbacks (as detailed in L<Net::OAuth2::AuthorizationServer::AuthorizationCodeGrant>)
-as a flat list (not a hash). If you wish to receive the arguments as a
-hash in the callbacks then pass args_as_hash => 1 to the plugin here.
 
 =head2 oauth
 
@@ -147,12 +141,6 @@ sub register {
 
   my $auth_route   = $config->{authorize_route}    // '/oauth/authorize';
   my $atoken_route = $config->{access_token_route} // '/oauth/access_token';
-  $args_as_hash    = $config->{args_as_hash}       // 0; # zero for back compat
-
-  if ( ! $args_as_hash ) {
-    warn "args_as_hash of @{[ __PACKAGE__ ]} is DEPRECATED and will become the standard soon"
-      unless $warned_dep++;
-  }
 
   if ( $config->{users} && ! $config->{jwt_secret} ) {
     croak "You MUST provide a jwt_secret to use the password grant (users supplied)";
@@ -209,7 +197,6 @@ sub register {
       my $c = shift;
       my @scopes = @_;
       $Grant = $AuthCodeGrant;
-      $Grant->legacy_args( $c ) if ! $args_as_hash;
       my @res = $Grant->verify_token_and_scope(
         scopes           => [ @scopes ],
         auth_header      => $c->req->headers->header( 'Authorization' ),
@@ -248,7 +235,6 @@ sub _authorization_request {
   }
 
   $Grant = $type eq 'token' ? $ImplicitGrant : $AuthCodeGrant;
-  $Grant->legacy_args( $self ) if ! $args_as_hash;
 
   my $mojo_url = Mojo::URL->new( $uri );
   my ( $res,$error ) = $Grant->verify_client(
@@ -373,8 +359,6 @@ sub _access_token_request {
   $Grant = $grant_type eq 'password'
     ? $PasswordGrant : $grant_type eq 'client_credentials'
     ? $ClientCredentialsGrant : $AuthCodeGrant;
-
-  $Grant->legacy_args( $self ) if ! $args_as_hash;
 
   my ( $client,$error,$scope,$user_id,$old_refresh_token ) = _verify_credentials(
     $self,$Grant,$grant_type,$refresh_token,$client_id,$client_secret,

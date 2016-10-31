@@ -1,5 +1,8 @@
 Revision history for Mojolicious-Plugin-OAuth2-Server
 
+0.32     2016-11-01
+        - Remove args_as_hash, this is now the default
+
 0.31     2016-10-01
         - Deprecate args_as_hash, will become the standard as from the next version
 

@@ -10,7 +10,10 @@ use lib $Bin;
 use AllTests;
 
 my $verify_client_sub = sub {
-  my ( $c,$client_id,$scopes_ref,$redirect_uri,$response_type ) = @_;
+  my ( %args ) = @_;
+
+  my ( $c,$client_id,$scopes_ref,$redirect_uri,$response_type )
+    = @args{ qw/ mojo_controller client_id scopes redirect_uri response_type / };
 
   # in reality we would check a config file / the database to confirm the
   # client_id and client_secret match and that the scopes are valid
@@ -24,7 +27,10 @@ my $verify_client_sub = sub {
 };
 
 my $store_auth_code_sub = sub {
-  my ( $c,$auth_code,$client_id,$expires_in,$url,@scopes ) = @_;
+  my ( %args ) = @_;
+
+  my ( $c,$auth_code,$client_id,$expires_in,$url,$scopes_ref )
+    = @args{qw/ mojo_controller auth_code client_id expires_in redirect_uri scopes / };
 
   # in reality would store stuff in the database here (or perhaps a
   # correctly scoped hash, but the database is where it should be so
@@ -36,7 +42,10 @@ my %VERIFIED_AUTH_CODES;
 my $ACCESS_REVOKED = 0;
 
 my $verify_auth_code_sub = sub {
-  my ( $c,$client_id,$client_secret,$auth_code,$url ) = @_;
+  my ( %args ) = @_;
+
+  my ( $c,$client_id,$client_secret,$auth_code,$url )
+    = @args{qw/ mojo_controller client_id client_secret auth_code redirect_uri / };
 
   return ( 0,'invalid_grant' ) if $client_id ne '1';
   return ( 0,'invalid_grant' ) if $client_secret ne 'boo';
@@ -66,10 +75,15 @@ my $VALID_ACCESS_TOKEN;
 my $VALID_REFRESH_TOKEN;
 
 my $store_access_token_sub = sub {
+  my ( %args ) = @_;
+
   my (
     $c,$client_id,$auth_code,$access_token,$refresh_token,
     $expires_in,$scope,$old_refresh_token
-  ) = @_;
+  ) = @args{qw/
+    mojo_controller client_id auth_code access_token
+    refresh_token expires_in scopes old_refresh_token
+  / };
 
   $VALID_ACCESS_TOKEN  = $access_token;
   $VALID_REFRESH_TOKEN = $refresh_token;
@@ -79,7 +93,10 @@ my $store_access_token_sub = sub {
 };
 
 my $verify_access_token_sub = sub {
-  my ( $c,$access_token,$scopes_ref,$is_refresh_token ) = @_;
+  my ( %args ) = @_;
+
+  my ( $c,$access_token,$scopes_ref,$is_refresh_token )
+  	= @args{qw/ mojo_controller access_token scopes is_refresh_token /};
 
   # and here we should check the access code is valid, not expired, and the
   # passed scopes are allowed for the access token

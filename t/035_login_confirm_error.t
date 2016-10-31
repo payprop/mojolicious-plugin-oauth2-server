@@ -21,7 +21,9 @@ MOJO_APP: {
   plugin 'OAuth2::Server' => {
     verify_client             => sub { return ( 1 ) },
     login_resource_owner      => sub {
-      my ( $c ) = @_;
+      my ( %args ) = @_;
+
+      my $c = $args{mojo_controller};
       if ( ! $LOGGED_IN++ ) {
         $c->redirect_to( '/oauth/login' );
         return;
@@ -30,7 +32,11 @@ MOJO_APP: {
       }
     },
     confirm_by_resource_owner => sub {
-      my ( $c,$scopes_ref ) = @_;
+      my ( %args ) = @_;
+
+      my ( $c,$client_id,$scopes_ref,$redirect_uri,$response_type )
+        = @args{ qw/ mojo_controller client_id scopes redirect_uri response_type / };
+
       if ( ! defined $CONFIRMED_SCOPES ) {
         $c->redirect_to( '/oauth/confirm_scopes' );
         # access is not required to be set by resource owner

@@ -12,7 +12,10 @@ use AllTests;
 my $VALID_ACCESS_TOKEN;
 
 my $verify_client_sub = sub {
-  my ( $c,$client_id,$scopes_ref ) = @_;
+  my ( %args ) = @_;
+
+  my ( $c,$client_id,$scopes_ref,$redirect_uri,$response_type )
+    = @args{ qw/ mojo_controller client_id scopes redirect_uri response_type / };
 
   # in reality we would check a config file / the database to confirm the
   # client_id and client_secret match and that the scopes are valid
@@ -26,14 +29,18 @@ my $verify_client_sub = sub {
 
 
 my $store_access_token_sub = sub {
-  $VALID_ACCESS_TOKEN  = $_[-5];
+  my ( %args ) = @_;
+  $VALID_ACCESS_TOKEN  = $args{access_token};
 
   # again, store stuff in the database
   return;
 };
 
 my $verify_access_token_sub = sub {
-  my ( $mojo_controller,$access_token,$scopes ) = @_;
+  my ( %args ) = @_;
+
+  my ( $c,$access_token,$scopes,$is_refresh_token )
+  	= @args{qw/ mojo_controller access_token scopes is_refresh_token /};
 
   # and here we should check the access code is valid, not expired, and the
   # passed scopes are allowed for the access token

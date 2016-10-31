@@ -14,7 +14,8 @@ sub startup {
     'OAuth2::Server' => {
       'verify_client'        => sub { return ( 1 ) },
       'login_resource_owner' => sub {
-        my ( $c ) = @_;
+        my ( %args ) = @_;
+        my $c = $args{mojo_controller};
         my $uri = join( '?',$c->url_for('current'),$c->url_with->query );
         $c->flash( 'redirect_after_login' => $uri );
         $c->redirect_to( '/oauth/login' );
