@@ -18,7 +18,9 @@ Authorization Server / Resource Server with Mojolicious
   use Mojolicious::Lite;
 
   plugin 'OAuth2::Server' => {
-      ... # see SYNOPSIS in Net::OAuth2::AuthorizationServer::Manual
+    authorize_route    => '/o/authorize',    # defaults to '/oauth/authorize' if missing
+    access_token_route => '/o/token',        # defaults to '/oauth/access_token' if missing
+    $oauth2_auth_code_grant_config           # see SYNOPSIS in Net::OAuth2::AuthorizationServer::Manual
   };
 
   group {
@@ -58,7 +60,13 @@ Or full fat app:
 
     ...
 
-    $self->plugin( 'OAuth2::Server' => $oauth2_auth_code_grant_config );
+    $self->plugin(
+      'OAuth2::Server' => {
+        authorize_route    => '/o/authorize',    # defaults to '/oauth/authorize'
+        access_token_route => '/o/token',        # defaults to '/oauth/access_token'
+        $oauth2_auth_code_grant_config           # see SYNOPSIS in Net::OAuth2::AuthorizationServer::Manual
+      }
+    );
   }
 
 Then in your controller:
@@ -71,13 +79,12 @@ Then in your controller:
     } else {
       return $c->render( status => 401, text => 'Unauthorized' );
     }
-
     ...
   }
 
 =head1 DESCRIPTION
 
-This plugin implements the various OAuth2 grant types flow as described at
+This plugin implements the various OAuth2 grant type flows as described at
 L<http://tools.ietf.org/html/rfc6749>. It is a complete implementation of
 RFC6749, with the exception of the "Extension Grants" as the description of
 that grant type is rather hand-wavy.
@@ -214,7 +221,7 @@ sub _authorization_request {
     = map { $self->param( $_ ) // undef }
     qw/ client_id redirect_uri response_type scope state /;
 
-  my @scopes = $scope ? split( / /,$scope ) : ();
+  my $scopes_req = $scope ? [split(/ /, $scope)] : [];
 
   if (
     ! defined( $client_id )
@@ -237,10 +244,10 @@ sub _authorization_request {
   $Grant = $type eq 'token' ? $ImplicitGrant : $AuthCodeGrant;
 
   my $mojo_url = Mojo::URL->new( $uri );
-  my ( $res,$error,$scopes_ref ) = $Grant->verify_client(
+  my ( $res,$error,$scopes_res ) = $Grant->verify_client(
     client_id       => $client_id,
     redirect_uri    => $uri,
-    scopes          => [ @scopes ],
+    scopes          => $scopes_req,
     mojo_controller => $self,
     response_type   => $type,
   );
@@ -253,9 +260,9 @@ sub _authorization_request {
       return;
     } else {
       $self->app->log->debug( "OAuth2::Server: Resource owner is logged in" );
-      ( $res,$error,$scopes_ref ) = $Grant->confirm_by_resource_owner(
+      ( $res,$error,$scopes_res ) = $Grant->confirm_by_resource_owner(
         client_id       => $client_id,
-        scopes          => $scopes_ref,
+        scopes          => $scopes_req,
         mojo_controller => $self,
       );
       if ( ! defined $res ) {
@@ -272,13 +279,13 @@ sub _authorization_request {
 
   if ( $res ) {
 
-    return _maybe_generate_access_token( $self,$mojo_url,$client_id,[ @scopes ],$state )
+    return _maybe_generate_access_token( $self,$mojo_url,$client_id,$scopes_res,$state,$scopes_req )
       if $type eq 'token'; # implicit grant
 
     $self->app->log->debug( "OAuth2::Server: Generating auth code for $client_id" );
     my $auth_code = $Grant->token(
       client_id       => $client_id,
-      scopes          => $scopes_ref,
+      scopes          => $scopes_res,
       type            => 'auth',
       redirect_uri    => $uri,
     );
@@ -288,11 +295,12 @@ sub _authorization_request {
       client_id       => $client_id,
       expires_in      => $Grant->auth_code_ttl,
       redirect_uri    => $uri,
-      scopes          => $scopes_ref,
+      scopes          => $scopes_res,
       mojo_controller => $self,
     );
 
     $mojo_url->query->append( code  => $auth_code );
+    $mojo_url->query->append( scope => join(" ",@{$scopes_res}) ) if ( @{$scopes_req} != @{$scopes_res} );
 
   } elsif ( $error ) {
     $mojo_url->query->append( error => $error );
@@ -310,11 +318,11 @@ sub _authorization_request {
 }
 
 sub _maybe_generate_access_token {
-  my ( $self,$mojo_url,$client,$scope,$state ) = @_;
+  my ( $self,$mojo_url,$client,$scopes,$state,$scopes_req ) = @_;
 
   my $access_token  = $Grant->token(
     client_id  => $client,
-    scopes     => $scope,
+    scopes     => $scopes,
     type       => 'access',
   );
 
@@ -322,7 +330,7 @@ sub _maybe_generate_access_token {
     client_id         => $client,
     access_token      => $access_token,
     expires_in        => $Grant->access_token_ttl,
-    scopes            => $scope,
+    scopes            => $scopes,
     mojo_controller   => $self,
   );
 
@@ -332,6 +340,7 @@ sub _maybe_generate_access_token {
   $mojo_url->query->append( state => $state ) if defined( $state );
   $mojo_url->query->append( token_type => 'bearer' );
   $mojo_url->query->append( expires_in => $Grant->access_token_ttl );
+  $mojo_url->query->append( scope => join(" ",@{$scopes}) ) if ( @{$scopes_req} != @{$scopes} );
 
   $self->redirect_to( $mojo_url );
 }
@@ -341,11 +350,13 @@ sub _access_token_request {
 
   my (
     $client_id,$client_secret,$grant_type,$auth_code,$uri,
-    $refresh_token,$username,$password
+    $refresh_token,$username,$password,$scope
   ) = map { $self->param( $_ ) // undef } qw/
     client_id client_secret grant_type code redirect_uri
-    refresh_token username password
+    refresh_token username password scope
   /;
+
+  my $scopes_req = $scope ? [split(/ /, $scope)] : [];
 
   $grant_type //='';
 
@@ -360,9 +371,9 @@ sub _access_token_request {
     ? $PasswordGrant : $grant_type eq 'client_credentials'
     ? $ClientCredentialsGrant : $AuthCodeGrant;
 
-  my ( $client,$error,$scope,$user_id,$old_refresh_token ) = _verify_credentials(
+  my ( $client,$error,$scopes_res,$user_id,$old_refresh_token ) = _verify_credentials(
     $self,$Grant,$grant_type,$refresh_token,$client_id,$client_secret,
-    $auth_code,$username,$password,$uri
+    $auth_code,$username,$password,$uri,$scopes_req
   );
 
   if ( $client ) {
@@ -372,14 +383,14 @@ sub _access_token_request {
     my $expires_in    = $Grant->access_token_ttl;
     my $access_token  = $Grant->token(
       client_id => $client,
-      scopes    => $scope,
+      scopes    => $scopes_res,
       type      => 'access',
       user_id   => $user_id,
     );
 
     my $refresh_token  = $Grant->token(
       client_id => $client,
-      scopes    => $scope,
+      scopes    => $scopes_res,
       type      => 'refresh',
       user_id   => $user_id,
     );
@@ -389,7 +400,7 @@ sub _access_token_request {
       ( $grant_type ne 'password' ? ( auth_code => $auth_code ) : () ),
       access_token      => $access_token,
       expires_in        => $expires_in,
-      scopes            => $scope,
+      scopes            => $scopes_res,
       ( $grant_type eq 'client_credentials'
         ? ()
         : (
@@ -408,6 +419,12 @@ sub _access_token_request {
       ( $grant_type eq 'client_credentials'
         ? ()
         : ( refresh_token => $refresh_token ),
+      ),
+      ( $grant_type eq 'authorization_code'
+        ? ()
+        : @{$scopes_req} != @{$scopes_res}
+        ? ()
+        : ( scope => join(" ",@{$scopes_res}) ),
       )
     };
 
@@ -506,21 +523,20 @@ sub _client_credentials_from_header {
 sub _verify_credentials {
   my (
     $self,$Grant,$grant_type,$refresh_token,$client_id,$client_secret,
-    $auth_code,$username,$password,$uri
+    $auth_code,$username,$password,$uri,$scopes
   ) = @_;
 
-  my ( $client,$error,$scope,$user_id,$old_refresh_token );
+  my ( $client,$error,$scopes_res,$user_id,$old_refresh_token );
 
   if ( $grant_type eq 'refresh_token' ) {
-    ( $client,$error,$scope,$user_id ) = $Grant->verify_token_and_scope(
+    ( $client,$error,$scopes_res,$user_id ) = $Grant->verify_token_and_scope(
       refresh_token    => $refresh_token,
       auth_header      => $self->req->headers->header( 'Authorization' ),
       mojo_controller  => $self,
     );
     $old_refresh_token = $refresh_token;
-
+    $scopes_res = $scopes;
   } elsif ( $grant_type eq 'password' ) {
-    $scope = $self->every_param( 'scope' );
 
     if ( my ( $client_id_from_header,$client_secret_from_header )
       = _client_credentials_from_header( $self ) ) {
@@ -532,40 +548,41 @@ sub _verify_credentials {
     ( $res,$error ) = $Grant->verify_client(
       client_id       => $client_id,
       client_secret   => $client_secret,
-      scopes          => $scope,
+      scopes          => $scopes,
     );
 
     if ( $res ) {
 
-      ( $client,$error,$scope,$user_id ) = $Grant->verify_user_password(
+      ( $client,$error,$scopes_res,$user_id ) = $Grant->verify_user_password(
         client_id       => $client_id,
         client_secret   => $client_secret,
         username        => $username,
         password        => $password,
         mojo_controller => $self,
-        scopes          => $scope,
+        scopes          => $scopes,
       );
     }
-
+    else {
+      undef( $client_id );
+    }
   } elsif ( $grant_type eq 'client_credentials' ) {
 
     my $client_secret;
 
     ( $client,$client_secret ) = _client_credentials_from_header( $self );
 
-    $scope = $self->every_param( 'scope' );
     my $res;
 
-    ( $res,$error ) = $Grant->verify_client(
+    ( $res,$error,$scopes_res ) = $Grant->verify_client(
       client_id       => $client,
       client_secret   => $client_secret,
-      scopes          => $scope,
+      scopes          => $scopes,
     );
 
     undef( $client_id ) if ! $res;
 
   } else {
-    ( $client,$error,$scope,$user_id ) = $Grant->verify_auth_code(
+    ( $client,$error,$scopes_res,$user_id ) = $Grant->verify_auth_code(
       client_id       => $client_id,
       client_secret   => $client_secret,
       auth_code       => $auth_code,
@@ -574,7 +591,7 @@ sub _verify_credentials {
     );
   }
 
-  return ( $client,$error,$scope,$user_id,$old_refresh_token );
+  return ( $client,$error,$scopes_res,$user_id,$old_refresh_token );
 }
 
 =head1 SEE ALSO
