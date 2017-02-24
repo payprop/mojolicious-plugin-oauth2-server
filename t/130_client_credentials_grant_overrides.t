@@ -19,12 +19,21 @@ my $verify_client_sub = sub {
 
   # in reality we would check a config file / the database to confirm the
   # client_id and client_secret match and that the scopes are valid
-  return ( 0,'invalid_scope' ) if grep { $_ eq 'cry' } @{ $scopes_ref // [] };
-  return ( 0,'access_denied' ) if grep { $_ eq 'drink' } @{ $scopes_ref // [] };
   return ( 0,'unauthorized_client' ) if $client_id ne '1';
 
+  my $valid_scopes = {eat => 1, drink => 0};
+  my $allowed_scopes;
+  for my $scope (@{$scopes_ref}) {
+    if (exists($valid_scopes->{$scope})) {
+      push @{$allowed_scopes}, $scope if $valid_scopes->{$scope};
+    }
+    else {
+      return ( 0, 'invalid_scope' );
+    }
+  }
+
   # all good
-  return ( 1,undef );
+  return ( 1,undef, $allowed_scopes );
 };
 
 
