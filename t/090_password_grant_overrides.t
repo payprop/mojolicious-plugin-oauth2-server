@@ -16,7 +16,7 @@ my $verify_user_password_sub = sub {
     = @args{qw/ client_id client_secret username password scopes /};
 
   return ( 0,'unauthorized_client' )
-    if ( $client_id ne '1' || $client_secret ne 'boo' );
+    if ( $client_id && ( $client_id ne '1' || $client_secret ne 'boo' ) );
 
   return ( $client_id,undef,$scopes,$username );
 };
@@ -61,7 +61,7 @@ my $verify_client_sub = sub {
   # client_id and client_secret match and that the scopes are valid
   return ( 0,'invalid_scope' ) if grep { $_ eq 'cry' } @{ $scopes_ref // [] };
   return ( 0,'access_denied' ) if grep { $_ eq 'drink' } @{ $scopes_ref // [] };
-  return ( 0,'unauthorized_client' ) if $client_id ne '1';
+  return ( 0,'unauthorized_client' ) if $client_id and $client_id ne '1';
 
   # all good
   return ( 1,undef );
