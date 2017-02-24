@@ -57,7 +57,6 @@ sub run {
     foreach my $invalid_params (
       { client_id     => 2,       error => 'unauthorized_client', },
       { scope         => 'cry',   error => 'invalid_scope', },
-      { scope         => 'drink', error => 'access_denied', },
     ) {
       my $expected_error = delete( $invalid_params->{error} );
       $t->get_ok( $auth_route => form => {

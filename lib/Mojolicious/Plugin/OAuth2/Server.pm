@@ -237,7 +237,7 @@ sub _authorization_request {
   $Grant = $type eq 'token' ? $ImplicitGrant : $AuthCodeGrant;
 
   my $mojo_url = Mojo::URL->new( $uri );
-  my ( $res,$error ) = $Grant->verify_client(
+  my ( $res,$error,$scopes_ref ) = $Grant->verify_client(
     client_id       => $client_id,
     redirect_uri    => $uri,
     scopes          => [ @scopes ],
@@ -253,9 +253,9 @@ sub _authorization_request {
       return;
     } else {
       $self->app->log->debug( "OAuth2::Server: Resource owner is logged in" );
-      $res = $Grant->confirm_by_resource_owner(
+      ( $res,$error,$scopes_ref ) = $Grant->confirm_by_resource_owner(
         client_id       => $client_id,
-        scopes          => [ @scopes ],
+        scopes          => $scopes_ref,
         mojo_controller => $self,
       );
       if ( ! defined $res ) {
@@ -278,7 +278,7 @@ sub _authorization_request {
     $self->app->log->debug( "OAuth2::Server: Generating auth code for $client_id" );
     my $auth_code = $Grant->token(
       client_id       => $client_id,
-      scopes          => [ @scopes ],
+      scopes          => $scopes_ref,
       type            => 'auth',
       redirect_uri    => $uri,
     );
@@ -288,7 +288,7 @@ sub _authorization_request {
       client_id       => $client_id,
       expires_in      => $Grant->auth_code_ttl,
       redirect_uri    => $uri,
-      scopes          => [ @scopes ],
+      scopes          => $scopes_ref,
       mojo_controller => $self,
     );
 
