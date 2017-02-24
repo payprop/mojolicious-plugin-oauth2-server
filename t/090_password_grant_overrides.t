@@ -51,6 +51,23 @@ my $verify_access_token_sub = sub {
   return $client_id;
 };
 
+my $verify_client_sub = sub {
+  my ( %args ) = @_;
+
+  my ( $c,$client_id,$scopes_ref,$redirect_uri,$response_type )
+    = @args{ qw/ mojo_controller client_id scopes redirect_uri response_type / };
+
+  # in reality we would check a config file / the database to confirm the
+  # client_id and client_secret match and that the scopes are valid
+  return ( 0,'invalid_scope' ) if grep { $_ eq 'cry' } @{ $scopes_ref // [] };
+  return ( 0,'access_denied' ) if grep { $_ eq 'drink' } @{ $scopes_ref // [] };
+  return ( 0,'unauthorized_client' ) if $client_id ne '1';
+
+  # all good
+  return ( 1,undef );
+};
+
+
 MOJO_APP: {
   # plugin configuration
   plugin 'OAuth2::Server' => {
@@ -58,7 +75,7 @@ MOJO_APP: {
     authorize_route      => '/o/auth',
     access_token_route   => '/o/token',
     verify_user_password => $verify_user_password_sub,
-    verify_client        => sub {}, # no-op as using password grant
+    verify_client        => $verify_client_sub,
     store_access_token  => $store_access_token_sub,
     verify_access_token => $verify_access_token_sub,
   };

@@ -179,12 +179,14 @@ sub run {
 
   my @post_args;
 
-  if ( $grant_type eq 'client_credentials' ) {
+  if ( $grant_type =~ /client_credentials|password/ ) {
 
-    my %valid_token_params = (
-      grant_type    => $grant_type,
-      scope         => [ qw/ eat / ],
-    );
+    if ( $grant_type eq 'client_credentials' ) {
+      %valid_token_params = (
+        grant_type    => $grant_type,
+        scope         => [ qw/ eat / ],
+      );
+    }
 
     my $encoded_client_details = b64_encode( join( ':',1,'boo' ) );
     chomp( $encoded_client_details );

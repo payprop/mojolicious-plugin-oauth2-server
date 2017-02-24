@@ -522,14 +522,31 @@ sub _verify_credentials {
   } elsif ( $grant_type eq 'password' ) {
     $scope = $self->every_param( 'scope' );
 
-    ( $client,$error,$scope,$user_id ) = $Grant->verify_user_password(
+    if ( my ( $client_id_from_header,$client_secret_from_header )
+      = _client_credentials_from_header( $self ) ) {
+      ( $client_id,$client_secret )
+        = ( $client_id_from_header,$client_secret_from_header );
+    }
+
+    my $res;
+    ( $res,$error ) = $Grant->verify_client(
       client_id       => $client_id,
       client_secret   => $client_secret,
-      username        => $username,
-      password        => $password,
-      mojo_controller => $self,
       scopes          => $scope,
     );
+
+    if ( $res ) {
+
+      ( $client,$error,$scope,$user_id ) = $Grant->verify_user_password(
+        client_id       => $client_id,
+        client_secret   => $client_secret,
+        username        => $username,
+        password        => $password,
+        mojo_controller => $self,
+        scopes          => $scope,
+      );
+    }
+
   } elsif ( $grant_type eq 'client_credentials' ) {
 
     my $client_secret;
