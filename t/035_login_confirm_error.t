@@ -19,7 +19,7 @@ my $LOGGED_IN = 0;
 MOJO_APP: {
   # plugin configuration
   plugin 'OAuth2::Server' => {
-    verify_client             => sub { return ( 1 ) },
+    verify_client             => sub { return ( 1, undef, [] ) },
     login_resource_owner      => sub {
       my ( %args ) = @_;
 
@@ -47,7 +47,7 @@ MOJO_APP: {
         return 0;
       } else {
         # resource owner allows access
-        return 1;
+        return (1,undef,[]);
       }
     },
     clients               => {

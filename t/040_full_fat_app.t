@@ -12,7 +12,7 @@ sub startup {
 
   $self->plugin(
     'OAuth2::Server' => {
-      'verify_client'        => sub { return ( 1 ) },
+      'verify_client'        => sub { return ( 1, undef, [] ) },
       'login_resource_owner' => sub {
         my ( %args ) = @_;
         my $c = $args{mojo_controller};

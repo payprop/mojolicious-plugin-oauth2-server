@@ -133,6 +133,7 @@ cmp_deeply(
     token_type    => 'Bearer',
     expires_in    => $TTL,
     refresh_token => re( '^.+$' ),
+    scope         => ''
   },
   'json_is_deeply'
 );

@@ -18,7 +18,7 @@ my $verify_user_password_sub = sub {
   return ( 0,'unauthorized_client' )
     if ( $client_id ne '1' || $client_secret ne 'boo' );
 
-  return ( $client_id,undef,$username,$scopes );
+  return ( $client_id,undef,$scopes,$username );
 };
 
 my $VALID_ACCESS_TOKEN;

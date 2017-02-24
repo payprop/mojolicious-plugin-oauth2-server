@@ -87,6 +87,20 @@ sub run {
       ok( ! $location->query->param( 'code' ),'no code' );
       ok( ! $location->query->param( 'access_token' ),'no code' );
       is( $location->query->param( 'error' ),'unauthorized_client','expected error' );
+      
+      note( " ... reduced scope (by resource owner)" );
+
+      foreach my $dissallowed_scope ({scope => 'eat drink', new_scope => undef}) {
+        my $new_scope = delete( $dissallowed_scope->{new_scope} );
+        $t->get_ok($auth_route => form => {
+            %valid_auth_params, %{ $dissallowed_scope }
+        } )
+        ->status_is( 302 );
+  
+        my $location = Mojo::URL->new($t->tx->res->headers->location);
+        is( $location->path,'/cb','redirect to right place' );
+        is( $location->query->param('scope'),$new_scope,'expected scope' );
+      }
     }
 
     $t->get_ok( $auth_route => form => \%valid_auth_params )
@@ -216,6 +230,10 @@ sub run {
         ? ()
         : ( refresh_token => re( '^.+$' ) )
       ),
+      ( $grant_type eq 'authorization_code' 
+        ? ()
+        : ( scope => 'eat' )
+      )
     },
     'json_is_deeply'
   );
@@ -269,6 +287,7 @@ sub run {
         token_type    => 'Bearer',
         expires_in    => '3600',
         refresh_token => re( '^.+$' ),
+        scope         => 'eat', #scopes or scope? (Should we also check for 'no scopes' when unmodified)
       },
       'json_is_deeply'
     );
