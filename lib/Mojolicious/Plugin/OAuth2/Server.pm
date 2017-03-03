@@ -252,6 +252,10 @@ sub _authorization_request {
     response_type   => $type,
   );
 
+  # verify client may not return scopes either due to the underlying module
+  # being an older version or the callback simply not returning it
+  $scopes_res //= $scopes_req;
+
   if ( $res ) {
 
     if ( ! $Grant->login_resource_owner( mojo_controller => $self ) ) {
@@ -265,6 +269,9 @@ sub _authorization_request {
         scopes          => $scopes_req,
         mojo_controller => $self,
       );
+
+      $scopes_res //= $scopes_req;
+
       if ( ! defined $res ) {
         $self->app->log->debug( "OAuth2::Server: Resource owner to confirm scopes" );
         # call to $resource_owner_confirms method should have called redirect_to
@@ -580,6 +587,10 @@ sub _verify_credentials {
     );
 
     undef( $client_id ) if ! $res;
+
+    # verify client may not return scopes either due to the underlying module
+    # being an older version or the callback simply not returning it
+    $scopes_res //= $scopes;
 
   } else {
     ( $client,$error,$scopes_res,$user_id ) = $Grant->verify_auth_code(
