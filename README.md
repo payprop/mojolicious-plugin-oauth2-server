@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 # VERSION
 
-0.30
+0.33
 
 # SYNOPSIS
 
@@ -104,11 +104,6 @@ and create a `auth_code_grant` that can be accessed using the defined
 `authorize_route` and `access_token_route`. The arguments passed to the
 plugin are passed straight through to the `auth_code_grant` method in
 the [Net::OAuth2::AuthorizationServer](https://metacpan.org/pod/Net::OAuth2::AuthorizationServer) module.
-
-Note to support backwards compatibility arguments will be passed to the
-callbacks (as detailed in [Net::OAuth2::AuthorizationServer::AuthorizationCodeGrant](https://metacpan.org/pod/Net::OAuth2::AuthorizationServer::AuthorizationCodeGrant))
-as a flat list (not a hash). If you wish to receive the arguments as a
-hash in the callbacks then pass args\_as\_hash => 1 to the plugin here.
 
 ## oauth
 

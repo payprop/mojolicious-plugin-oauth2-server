@@ -1,5 +1,8 @@
 Revision history for Mojolicious-Plugin-OAuth2-Server
 
+0.33     2017-03-03
+        - Fix tests for recent version of Net::OAuth2::AuthorizationServer
+
 0.32     2016-11-01
         - Remove args_as_hash, this is now the default
 
