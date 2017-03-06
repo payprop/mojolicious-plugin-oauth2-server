@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.33
+0.34
 
 =head1 SYNOPSIS
 
@@ -96,11 +96,12 @@ use warnings;
 use base qw/ Mojolicious::Plugin /;
 
 use Mojo::URL;
+use Mojo::Parameters;
 use Mojo::Util qw/ b64_decode /;
 use Net::OAuth2::AuthorizationServer;
 use Carp qw/ croak /;
 
-our $VERSION = '0.33';
+our $VERSION = '0.34';
 
 my ( $AuthCodeGrant,$PasswordGrant,$ImplicitGrant,$ClientCredentialsGrant,$Grant );
 
@@ -328,11 +329,17 @@ sub _maybe_generate_access_token {
 
   # http://example.com/cb#access_token=2YotnFZFEjr1zCsicMWpAA
   #     &state=xyz&token_type=example&expires_in=3600
-  $mojo_url->query->append( access_token => $access_token );
-  $mojo_url->query->append( state => $state ) if defined( $state );
-  $mojo_url->query->append( token_type => 'bearer' );
-  $mojo_url->query->append( expires_in => $Grant->access_token_ttl );
+  my $params = Mojo::Parameters->new(
+     access_token => $access_token,
+     token_type   => 'bearer',
+     expires_in   => $Grant->access_token_ttl,
+     ( $state
+       ? ( state => $state )
+       : (),
+     )
+  );
 
+  $mojo_url->fragment( $params->to_string );
   $self->redirect_to( $mojo_url );
 }
 
