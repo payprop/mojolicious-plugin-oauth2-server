@@ -1,5 +1,8 @@
 Revision history for Mojolicious-Plugin-OAuth2-Server
 
+0.35     2017-03-06
+        - Fix bug in test for previous version
+
 0.34     2017-03-06
         - Fix implicit grant should return query params in a fragment
 
