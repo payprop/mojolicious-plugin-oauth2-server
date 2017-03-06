@@ -98,18 +98,20 @@ sub run {
     is( $location->path,'/cb','redirect to right place' );
 
     if ( $response_type eq 'token' ) {
-      ok( $location->query->param( 'access_token' ),'includes access_token' );
-      is( $location->query->param( 'token_type' ),'bearer','includes token_type' );
+      like( $location->fragment,qr/access_token/,'includes access_token' );
+      like( $location->fragment,qr/bearer/,'includes token_type' );
+      like( $location->fragment,qr/queasy/,'includes state' );
     } else {
       ok( $auth_code = $location->query->param( 'code' ),'includes code' );
+      is( $location->query->param( 'state' ),'queasy','includes state' );
     }
-    is( $location->query->param( 'state' ),'queasy','includes state' );
   }
 
   if ( $grant_type eq 'token' ) {
 
     my $location = Mojo::URL->new( $t->tx->res->headers->location );
-    ok( my $access_token = $location->query->param( 'access_token' ),'includes token' );
+    note $location->fragment;
+    ok( my ( $access_token ) = ( $location->fragment =~ qr/access_token=([^&]*)/ ),'includes token' );
 
     note( "don't use access token to access route" );
     $t->get_ok('/api/eat')->status_is( 401 );
