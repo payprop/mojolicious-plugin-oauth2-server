@@ -4,7 +4,7 @@ use strict;
 use warnings;
 
 use Mojo::URL;
-use Mojo::Util qw/ b64_encode /;
+use Mojo::Util qw/ b64_encode url_unescape /;
 use Test::More;
 use Test::Deep;
 use Test::Mojo;
@@ -112,6 +112,8 @@ sub run {
     my $location = Mojo::URL->new( $t->tx->res->headers->location );
     note $location->fragment;
     ok( my ( $access_token ) = ( $location->fragment =~ qr/access_token=([^&]*)/ ),'includes token' );
+
+    $access_token = url_unescape( $access_token );
 
     note( "don't use access token to access route" );
     $t->get_ok('/api/eat')->status_is( 401 );
