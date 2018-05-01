@@ -40,9 +40,6 @@ sub startup {
 
      if ( my $oauth_details = $c->oauth ) {
 	     $log->info( "OAUTH: " . Dumper( $oauth_details ) );
-       $log->info( sprintf "AUTHENTICATED: path=%s user=%s scope=%s",
-         $path, $oauth_details->{client_id}, $oauth_details->{user_id}, join( ",", @{$oauth_details->{scopes} || []} )
-			 );
        return 1;
      }
      else {
