@@ -23,6 +23,7 @@ WriteMakefile(
     'Test::Deep'      => 0.113,
     'Test::Mojo'      => 0,
     'Test::Exception' => 0.32,
+    'Mojo::JWT'       => 0.08,
   },
   META_MERGE => {
     requires  => {
