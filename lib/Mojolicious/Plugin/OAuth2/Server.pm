@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.45
+0.46
 
 =head1 SYNOPSIS
 
@@ -101,7 +101,7 @@ use Mojo::Util qw/ b64_decode url_unescape /;
 use Net::OAuth2::AuthorizationServer;
 use Carp qw/ croak /;
 
-our $VERSION = '0.45';
+our $VERSION = '0.46';
 
 my ( $AuthCodeGrant,$PasswordGrant,$ImplicitGrant,$ClientCredentialsGrant,$Grant,$JWTCallback );
 
@@ -461,6 +461,18 @@ sub _access_token_request {
 
     $status        = 200;
     $json_response = {
+      # RFC6749 section 5.1 says that Access Token Response should include
+      # the authorized scope when it does not match the requested scopes:
+      #
+      #   OPTIONAL, if identical to the scope requested by the client;
+      #   otherwise, REQUIRED. The scope of the access token as
+      #   described by Section 3.3.
+      ( ! $old_refresh_token && $scope
+        ? ( scopes => ref( $scope ) eq 'HASH'
+            ? [ map { $_ } grep { $scope->{$_} } keys %{ $scope } ]
+            : $scope )
+        : ()),
+
       access_token  => $access_token,
       token_type    => 'Bearer',
       expires_in    => $expires_in,
