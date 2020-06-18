@@ -11,7 +11,7 @@ Authorization Server / Resource Server with Mojolicious
 
 =head1 VERSION
 
-0.44
+0.45
 
 =head1 SYNOPSIS
 
@@ -101,7 +101,7 @@ use Mojo::Util qw/ b64_decode url_unescape /;
 use Net::OAuth2::AuthorizationServer;
 use Carp qw/ croak /;
 
-our $VERSION = '0.44';
+our $VERSION = '0.45';
 
 my ( $AuthCodeGrant,$PasswordGrant,$ImplicitGrant,$ClientCredentialsGrant,$Grant,$JWTCallback );
 
@@ -601,6 +601,7 @@ sub _verify_credentials {
     ( $res,$error ) = $Grant->verify_client(
       client_id       => $client,
       client_secret   => $client_secret,
+      mojo_controller => $self,
       scopes          => $scope,
     );
 
