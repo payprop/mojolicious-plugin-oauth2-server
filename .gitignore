@@ -10,4 +10,16 @@ blib
 cover_db
 pm_to_blib
 examples/data/
-.DS_Store
+
+# editing
+*.vim
+vim.session*
+.vscode
+.vstags
+.idea
+\#*\#
+*~
+*.swp
+
+# OS X nonsense
+*.DS_Store
