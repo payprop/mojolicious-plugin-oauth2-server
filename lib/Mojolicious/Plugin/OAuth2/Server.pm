@@ -626,7 +626,7 @@ sub _verify_credentials {
     $scope = $self->every_param( 'scope' );
     my $res;
 
-    ( $res,$error,$error_description,$error_description ) = $Grant->verify_client(
+    ( $res,$error,$error_description ) = $Grant->verify_client(
       client_id       => $client,
       client_secret   => $client_secret,
       mojo_controller => $self,
