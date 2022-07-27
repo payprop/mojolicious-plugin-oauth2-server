@@ -542,7 +542,7 @@ sub _access_token_request_check_params {
   } elsif (
     $grant_type eq 'client_credentials'
   ) {
-    my ( $client_id,$client_secret ) = _client_credentials_from_header( $self );
+    my ( $client_id,$client_secret ) = _client_credentials_from_header_or_body( $self );
 
     if ( ! $client_id || ! $client_secret ) {
       $self->render(
@@ -578,16 +578,21 @@ sub _access_token_request_check_params {
   return 1;
 }
 
-sub _client_credentials_from_header {
+sub _client_credentials_from_header_or_body {
   my ( $self ) = @_;
+  my ( $client_id,$client_secret );
 
   if ( my $auth_header = $self->req->headers->header( 'Authorization' ) ) {
     if ( my ( $encoded_details ) = ( split( 'Basic ',$auth_header ) )[1] ) {
       my $decoded_details = b64_decode( $encoded_details // '' );
-      my ( $client_id,$client_secret ) = split( ':',$decoded_details );
-      return ( $client_id,$client_secret );
+      ( $client_id,$client_secret ) = split( ':',$decoded_details );
     }
+  } else {
+    #Details are in body
+    $client_id = $self->req->param('client_id');
+    $client_secret = $self->req->param('client_secret');
   }
+  return ( $client_id,$client_secret );
 }
 
 sub _verify_credentials {
@@ -621,7 +626,7 @@ sub _verify_credentials {
 
     my $client_secret;
 
-    ( $client,$client_secret ) = _client_credentials_from_header( $self );
+    ( $client,$client_secret ) = _client_credentials_from_header_or_body( $self );
 
     $scope = $self->every_param( 'scope' );
     my $res;
