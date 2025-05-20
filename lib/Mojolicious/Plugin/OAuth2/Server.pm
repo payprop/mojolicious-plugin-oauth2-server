@@ -587,7 +587,7 @@ sub _client_credentials_from_header {
   if ( my $auth_header = $self->req->headers->header( 'Authorization' ) ) {
     if ( my ( $encoded_details ) = ( split( 'Basic ',$auth_header ) )[1] ) {
       my $decoded_details = b64_decode( $encoded_details // '' );
-      ( $client_id,$client_secret ) = split( ':',$decoded_details );
+      ( $client_id,$client_secret ) = split( ':',$decoded_details, 2);
       return ( $client_id,$client_secret );
     }
 
